@@ -11,6 +11,7 @@ import base64
 from typing import Optional, Dict, Any, List
 import logging
 
+import re
 from app.cache import is_cached, get_cached_file, cache_file, get_cache_path
 
 logger = logging.getLogger(__name__)
@@ -42,12 +43,220 @@ TIDAL_APIS = [
 ]
 
 
+
 class AudioService:
     """Service for fetching and transcoding audio."""
     
     # Tidal credentials (same as SpotiFLAC)
     TIDAL_CLIENT_ID = base64.b64decode("NkJEU1JkcEs5aHFFQlRnVQ==").decode()
     TIDAL_CLIENT_SECRET = base64.b64decode("eGV1UG1ZN25icFo5SUliTEFjUTkzc2hrYTFWTmhlVUFxTjZJY3N6alRHOD0=").decode()
+
+    async def import_url(self, url: str) -> Optional[Dict[str, Any]]:
+        """Import track or playlist from URL using yt-dlp."""
+        try:
+            loop = asyncio.get_event_loop()
+            info = await loop.run_in_executor(None, lambda: self._extract_info_safe(url))
+            
+            if not info:
+                return None
+            
+            # Phish.in Custom Handler
+            if "phish.in" in url:
+                logger.info("Detected Phish.in URL, using custom API handler")
+                phish_data = await self._import_phish_in(url)
+                if phish_data: return phish_data
+            
+            # Check if it's a playlist/album
+            if 'entries' in info and info['entries']:
+                logger.info(f"Detected playlist: {info.get('title')}")
+                tracks = []
+                for entry in info['entries']:
+                    if not entry: continue
+                    
+                    # Determine playback URL (webpage_url for recalculation, or direct url)
+                    # For stability, we prefer the webpage_url if it's a separate page, 
+                    # OR we use the original URL with an index? 
+                    # Ideally, entry has 'webpage_url' or 'url'.
+                    # For yt-dlp, 'url' might be the stream url (which expires). 'webpage_url' is persistent.
+                    play_url = entry.get('webpage_url') or entry.get('url')
+                    if not play_url: continue
+
+                    safe_t_id = f"LINK:{base64.urlsafe_b64encode(play_url.encode()).decode()}"
+                    duration_s = entry.get('duration', 0)
+                    
+                    tracks.append({
+                        'id': safe_t_id,
+                        'name': entry.get('title', 'Unknown Title'),
+                        'artists': entry.get('uploader', entry.get('artist', 'Unknown Artist')),
+                        'album_art': entry.get('thumbnail', info.get('thumbnail', '/static/icon.svg')),
+                        'duration': f"{int(duration_s // 60)}:{int(duration_s % 60):02d}",
+                        'album': info.get('title', 'Imported Playlist'),
+                        'isrc': safe_t_id # Use ID as ISRC for internal logic
+                    })
+                
+                if not tracks: return None
+
+                return {
+                    'type': 'album',
+                    'id': f"LINK:{base64.urlsafe_b64encode(url.encode()).decode()}",
+                    'name': info.get('title', 'Imported Playlist'),
+                    'artists': info.get('uploader', 'Various'),
+                    'image': info.get('thumbnail', '/static/icon.svg'), # Use album art
+                    'release_date': info.get('upload_date', ''),
+                    'tracks': tracks,
+                    'total_tracks': len(tracks),
+                    'is_custom': True
+                }
+
+            # Single Track Logic
+            safe_id = f"LINK:{base64.urlsafe_b64encode(url.encode()).decode()}"
+            duration_s = info.get('duration', 0)
+            
+            track = {
+                'id': safe_id,
+                'name': info.get('title', 'Unknown Title'),
+                'artists': info.get('uploader', info.get('artist', 'Unknown Artist')),
+                'album_art': info.get('thumbnail', '/static/icon.svg'),
+                'duration': f"{int(duration_s // 60)}:{int(duration_s % 60):02d}",
+                'album': info.get('extractor_key', 'Imported'),
+                'isrc': safe_id
+            }
+            return track
+        except Exception as e:
+            logger.error(f"Import error: {e}")
+            return None
+
+    def _extract_info_safe(self, url):
+        try:
+            import yt_dlp
+            ydl_opts = {
+                'quiet': True,
+                'no_warnings': True,
+                'format': 'bestaudio/best',
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                return ydl.extract_info(url, download=False)
+        except Exception as e:
+            logger.error(f"yt-dlp error: {e}")
+            return None
+
+    async def _import_phish_in(self, url: str) -> Optional[Dict[str, Any]]:
+        """Import show from Phish.in API."""
+        try:
+            # Extract date YYYY-MM-DD
+            match = re.search(r'(\d{4}-\d{2}-\d{2})', url)
+            if not match:
+                logger.warning("Could not extract date from Phish.in URL")
+                return None
+            
+            date = match.group(1)
+            api_url = f"https://phish.in/api/v2/shows/{date}"
+            
+            logger.info(f"Fetching Phish.in API: {api_url}")
+            async with httpx.AsyncClient() as client:
+                response = await client.get(api_url, timeout=15.0)
+                if response.status_code != 200:
+                    return None
+                
+                data = response.json()
+                
+                tracks_list = []
+                show_meta = {}
+
+                # Handle v2 (List of tracks? or Object with tracks?)
+                # Swagger says implementation differs. Based on curl, likely a List.
+                if isinstance(data, list):
+                     tracks_list = data
+                     if tracks_list:
+                         show_meta = tracks_list[0]
+                elif isinstance(data, dict):
+                    if 'data' in data: data = data['data']
+                    if 'tracks' in data:
+                        tracks_list = data['tracks']
+                        show_meta = data
+                    else:
+                        # Maybe data IS the track list?
+                        pass
+
+                if not tracks_list: return None
+                
+                tracks = []
+                # extracting metadata
+                venue = show_meta.get('venue_name', show_meta.get('venue', {}).get('name', 'Unknown Venue'))
+                show_date = show_meta.get('show_date', show_meta.get('date', date))
+                
+                album_name = f"{show_date} - {venue}"
+                
+                for t in tracks_list:
+                    # mp3 url is usually http, ensure https if possible or leave as is
+                    mp3_url = t.get('mp3_url') or t.get('mp3')
+                    if not mp3_url: continue
+                    
+                    safe_id = f"LINK:{base64.urlsafe_b64encode(mp3_url.encode()).decode()}"
+                    duration_s = t.get('duration', 0) / 1000.0 if t.get('duration', 0) > 10000 else t.get('duration', 0) 
+                    # v2 duration seems to be ms? curl say 666600 (666s = 11m). So ms.
+                    
+                    tracks.append({
+                        'id': safe_id,
+                        'name': t.get('title', 'Unknown'),
+                        'artists': 'Phish',
+                        'album': album_name,
+                        'album_art': t.get('show_album_cover_url', '/static/icon.svg'), 
+                        'duration': f"{int(duration_s // 60)}:{int(duration_s % 60):02d}",
+                        'isrc': safe_id
+                    })
+                
+                if not tracks: return None
+                
+                return {
+                    'type': 'album',
+                    'id': f"LINK:{base64.urlsafe_b64encode(url.encode()).decode()}",
+                    'name': album_name,
+                    'artists': 'Phish',
+                    'image': tracks[0]['album_art'],
+                    'release_date': show_date,
+                    'tracks': tracks,
+                    'total_tracks': len(tracks),
+                    'is_custom': True
+                }
+        except Exception as e:
+            logger.error(f"Phish.in import error: {e}")
+            return None
+
+    def _get_stream_url(self, url: str) -> Optional[str]:
+        """Get the actual stream URL from a page URL using yt-dlp."""
+        info = self._extract_info_safe(url)
+        if not info: return None
+        if 'entries' in info: info = info['entries'][0]
+        return info.get('url')
+
+    def transcode_url_to_mp3(self, stream_url: str, bitrate: str = BITRATE) -> Optional[bytes]:
+        """Transcode a direct stream URL to MP3."""
+        try:
+            logger.info(f"Transcoding URL to MP3: {stream_url[:50]}...")
+            process = subprocess.Popen(
+                [
+                    FFMPEG_PATH,
+                    "-i", stream_url,
+                    "-vn",
+                    "-acodec", "libmp3lame",
+                    "-b:a", bitrate,
+                    "-f", "mp3",
+                    "pipe:1"
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            mp3_data, stderr = process.communicate()
+            
+            if process.returncode != 0:
+                logger.error(f"FFmpeg URL transcode error: {stderr.decode()[:500]}")
+                return None
+            return mp3_data
+        except Exception as e:
+            logger.error(f"URL transcode error: {e}")
+            return None
+
     
     def __init__(self):
         # Enable redirect following and increase timeout
@@ -323,6 +532,30 @@ class AudioService:
             cached_data = await get_cached_file(isrc, "mp3")
             if cached_data:
                 return cached_data
+                
+        # Handle Imported Links
+        if isrc.startswith("LINK:"):
+            try:
+                encoded_url = isrc.replace("LINK:", "")
+                original_url = base64.urlsafe_b64decode(encoded_url).decode()
+                
+                logger.info(f"Processing imported link: {original_url}")
+                loop = asyncio.get_event_loop()
+                
+                # Get stream URL
+                stream_url = await loop.run_in_executor(None, self._get_stream_url, original_url)
+                if not stream_url: return None
+                
+                # Transcode
+                mp3_data = await loop.run_in_executor(None, self.transcode_url_to_mp3, stream_url)
+                
+                if mp3_data:
+                    await cache_file(isrc, mp3_data, "mp3")
+                    return mp3_data
+                return None
+            except Exception as e:
+                logger.error(f"Link handling error: {e}")
+                return None
         
         # Fetch and transcode
         logger.info(f"Cache miss for {isrc}, fetching...")
@@ -340,6 +573,146 @@ class AudioService:
             await cache_file(isrc, mp3_data, "mp3")
         
         return mp3_data
+    
+    # Format configurations for FFmpeg
+    FORMAT_CONFIG = {
+        "mp3": {
+            "ext": ".mp3",
+            "mime": "audio/mpeg",
+            "args": ["-acodec", "libmp3lame", "-b:a", "320k", "-f", "mp3"]
+        },
+        "mp3_128": {
+            "ext": ".mp3",
+            "mime": "audio/mpeg", 
+            "args": ["-acodec", "libmp3lame", "-b:a", "128k", "-f", "mp3"]
+        },
+        "flac": {
+            "ext": ".flac",
+            "mime": "audio/flac",
+            "args": ["-acodec", "flac", "-f", "flac"]
+        },
+        "aiff": {
+            "ext": ".aiff",
+            "mime": "audio/aiff",
+            "args": ["-acodec", "pcm_s16be", "-f", "aiff"]
+        },
+        "wav": {
+            "ext": ".wav",
+            "mime": "audio/wav",
+            "args": ["-acodec", "pcm_s16le", "-f", "wav"]
+        },
+        "alac": {
+            "ext": ".m4a",
+            "mime": "audio/mp4",
+            "args": ["-acodec", "alac", "-f", "ipod"]
+        }
+    }
+    
+    def transcode_to_format(self, flac_data: bytes, format: str = "mp3") -> Optional[bytes]:
+        """Transcode FLAC to specified format using FFmpeg."""
+        config = self.FORMAT_CONFIG.get(format, self.FORMAT_CONFIG["mp3"])
+        
+        try:
+            logger.info(f"Transcoding to {format} using FFmpeg at: {FFMPEG_PATH}")
+            
+            cmd = [
+                FFMPEG_PATH,
+                "-i", "pipe:0",      # Read from stdin
+                "-vn",               # No video
+            ] + config["args"] + [
+                "pipe:1"             # Write to stdout
+            ]
+            
+            process = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            
+            output_data, stderr = process.communicate(input=flac_data)
+            
+            if process.returncode != 0:
+                logger.error(f"FFmpeg error: {stderr.decode()[:500]}")
+                return None
+            
+            logger.info(f"Transcoded to {format}: {len(output_data) / 1024 / 1024:.2f} MB")
+            return output_data
+            
+        except FileNotFoundError:
+            logger.error("FFmpeg not found!")
+            return None
+        except Exception as e:
+            logger.error(f"Transcode error: {e}")
+            return None
+    
+    async def get_download_audio(self, isrc: str, query: str, format: str = "mp3") -> Optional[tuple]:
+        """Get audio in specified format for download. Returns (data, extension, mime_type)."""
+        
+        config = self.FORMAT_CONFIG.get(format, self.FORMAT_CONFIG["mp3"])
+        cache_ext = format if format != "mp3_128" else "mp3_128"
+        
+        # Check cache
+        if is_cached(isrc, cache_ext):
+            logger.info(f"Cache hit for {isrc}.{cache_ext}")
+            cached_data = await get_cached_file(isrc, cache_ext)
+            if cached_data:
+                return (cached_data, config["ext"], config["mime"])
+        
+        # Fetch FLAC
+        # Fetch FLAC or handle LINK
+        logger.info(f"Fetching audio for download: {isrc}")
+        
+        # Handle Imported Links
+        if isrc.startswith("LINK:"):
+            try:
+                encoded_url = isrc.replace("LINK:", "")
+                original_url = base64.urlsafe_b64decode(encoded_url).decode()
+                
+                loop = asyncio.get_event_loop()
+                stream_url = await loop.run_in_executor(None, self._get_stream_url, original_url)
+                if not stream_url: return None
+                
+                # Reuse transcode_to_format logic but with URL input?
+                # Actually, duplicate transcode_to_format for URL or modify existing
+                # For simplicity, fetch the data? No, streaming is better.
+                # Let's download it as MP3 (default) or whatever format using ffmpeg.
+                
+                # Helper to transcode URL to format
+                args = config["args"]
+                cmd = [FFMPEG_PATH, "-i", stream_url, "-vn"] + args + ["pipe:1"]
+                
+                output_data = await loop.run_in_executor(None, lambda: subprocess.check_output(cmd, stderr=subprocess.DEVNULL))
+                
+                if output_data:
+                    await cache_file(isrc, output_data, cache_ext)
+                    return (output_data, config["ext"], config["mime"])
+                return None
+            except Exception as e:
+                logger.error(f"Link download error: {e}")
+                return None
+        
+        flac_data = await self.fetch_flac(isrc, query)
+        
+        if not flac_data:
+            return None
+        
+        # For FLAC format, just return the original
+        if format == "flac":
+            await cache_file(isrc, flac_data, "flac")
+            return (flac_data, ".flac", "audio/flac")
+        
+        # Transcode
+        loop = asyncio.get_event_loop()
+        output_data = await loop.run_in_executor(
+            None, self.transcode_to_format, flac_data, format
+        )
+        
+        if output_data:
+            await cache_file(isrc, output_data, cache_ext)
+            return (output_data, config["ext"], config["mime"])
+        
+        return None
     
     async def close(self):
         """Close the HTTP client."""

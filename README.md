@@ -1,22 +1,64 @@
 # Freedify - Music Streaming Web App
 
-Stream music from anywhere. Search songs, albums, or artists, and paste Spotify links to load entire playlists.
+Stream music from anywhere. Search songs, albums, artists, or paste URLs from Spotify, Bandcamp, Archive.org, Phish.in, and more.
 
-## Features
+## ✨ Features
 
-- 🔍 **Search** - Songs, albums, or artists
-- 📋 **Spotify URLs** - Paste album/playlist links to load all tracks
-- ➕ **Queue Management** - Add all, clear, reorder
-- 📱 **Mobile PWA** - Install on your phone's home screen
-- 🎧 **High Quality** - 320kbps MP3 streaming
+### 🔍 Search
+- **Deezer-powered** - Search tracks, albums, or artists with no rate limits
+- **Live Show Search** - Search "Phish 2024" or "Grateful Dead 1977" to find live shows
+- **Podcast Search** - Search and stream podcast episodes via iTunes integration
+- **URL Import** - Paste links from Spotify, Bandcamp, Soundcloud, Archive.org, Phish.in
 
-## Quick Start (Local)
+### 🎵 Live Show Archives
+- **Phish.in** - Search by year/month (e.g., `Phish 2025` or `Phish 2024/12`)
+- **Archive.org** - Grateful Dead, Billy Strings, Ween, King Gizzard
+- **Direct URLs** - Paste any phish.in or archive.org show URL
+
+### 🎛️ Player Controls
+- **Volume Control** - Slider + mute button
+- **Repeat Modes** - Off / Repeat All / Repeat One
+- **Shuffle** - Shuffle playlist or current queue
+- **Fullscreen Mode** - Click album art to expand
+
+### 💾 Download
+- **Single Tracks** - Download as `Artist - Song.ext`
+- **Full Albums/Playlists** - Batch download as `Artist - Album.zip`
+- **Multiple Formats** - FLAC, AIFF, ALAC, WAV, 320kbps MP3
+- **Current Track** - Press ⬇ on player bar or fullscreen to download now playing
+
+### ⌨️ Keyboard Shortcuts
+| Key | Action |
+|-----|--------|
+| `Space` | Play/Pause |
+| `←` / `→` | Previous/Next track |
+| `Shift+←` / `Shift+→` | Seek -/+ 10 seconds |
+| `↑` / `↓` | Volume up/down |
+| `M` | Mute/Unmute |
+| `S` | Shuffle queue |
+| `R` | Cycle repeat mode |
+| `F` | Toggle fullscreen |
+| `Q` | Toggle queue |
+| `?` | Show shortcuts help |
+
+### 📋 Queue Management
+- **Drag to Reorder** - Drag tracks to rearrange
+- **Add All / Shuffle All** - From any album or playlist
+- **Smart Preloading** - Next track buffers automatically
+- **Click to Navigate** - Click track/artist name to search
+
+### 📱 Mobile Ready
+- **PWA Support** - Install on your phone's home screen
+- **Responsive Design** - Works on any screen size
+- **320kbps MP3** - High quality streaming
+
+## 🚀 Quick Start
 
 ```bash
 # Install dependencies
 pip install -r app/requirements.txt
 
-# Install FFmpeg (required for transcoding)
+# Install FFmpeg (required)
 # Windows: winget install ffmpeg
 # macOS: brew install ffmpeg
 # Linux: apt install ffmpeg
@@ -27,38 +69,61 @@ python -m uvicorn app.main:app --port 8000
 
 Open http://localhost:8000
 
-## Deploy to Render
+## 🌐 Deploy to Render
 
 1. Fork/push this repo to GitHub
-2. Go to [render.com](https://render.com) and create a new **Web Service**
+2. Go to [render.com](https://render.com) → New **Web Service**
 3. Connect your GitHub repo
-4. Render will auto-detect the `render.yaml` configuration
+4. Render auto-detects `render.yaml`
 5. Click **Deploy**
 
-Your app will be live at `https://freedify-XXXX.onrender.com`
+Live at `https://your-app.onrender.com`
 
-> **Note:** Free tier may take 30-60 seconds to wake up if idle.
+> **Note:** Free tier may take 30-60s to wake if idle.
 
-## Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| MP3_BITRATE | 320k | Output MP3 bitrate |
-| PORT | 8000 | Server port |
-
-## Project Structure
+## 📁 Project Structure
 
 ```
 ├── app/
-│   ├── main.py           # FastAPI server
-│   ├── spotify_service.py # Spotify search & metadata
-│   ├── audio_service.py  # Tidal/Deezer download + FFmpeg
-│   ├── cache.py          # File-based caching
+│   ├── main.py              # FastAPI server
+│   ├── deezer_service.py    # Deezer search (primary)
+│   ├── spotify_service.py   # Spotify URL handling
+│   ├── live_show_service.py # Phish.in & Archive.org
+│   ├── podcast_service.py   # Podcast & Episode search
+│   ├── audio_service.py     # yt-dlp + FFmpeg streaming
+│   ├── cache.py             # File-based caching
 │   └── requirements.txt
 ├── static/
 │   ├── index.html
 │   ├── app.js
 │   ├── styles.css
 │   └── manifest.json
-└── render.yaml           # Render deployment config
+└── render.yaml              # Render deployment config
 ```
+
+## ⚙️ Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| MP3_BITRATE | 320k | Output MP3 bitrate |
+| PORT | 8000 | Server port |
+
+## 📝 Usage Tips
+
+**Live Show Search Examples:**
+- `Phish 2025` - All 2025 Phish shows
+- `Phish 2024/12` - December 2024 shows
+- `Grateful Dead 1977` - 1977 Dead from Archive.org
+- `Billy Strings 2023` - 2023 Billy shows
+
+**Supported URL Sources:**
+- Spotify (playlists, albums, tracks)
+- Bandcamp
+- Soundcloud
+- YouTube
+- Archive.org
+- Phish.in
+- And 1000+ more via yt-dlp
+
+---
+Made with 🎵 by music lovers, for music lovers.

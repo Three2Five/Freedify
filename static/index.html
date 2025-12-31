@@ -16,6 +16,34 @@
     <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+    <!-- Toast Container -->
+    <div id="toast-container" class="toast-container"></div>
+    
+    <!-- Keyboard Shortcuts Help -->
+    <div id="shortcuts-help" class="shortcuts-help hidden">
+        <div class="shortcuts-content">
+            <div class="shortcuts-header">
+                <h3>⌨️ Keyboard Shortcuts</h3>
+                <button id="shortcuts-close" class="shortcuts-close">×</button>
+            </div>
+            <div class="shortcuts-grid">
+                <div class="shortcut"><kbd>Space</kbd><span>Play/Pause</span></div>
+                <div class="shortcut"><kbd>→</kbd><span>Next Track</span></div>
+                <div class="shortcut"><kbd>←</kbd><span>Previous Track</span></div>
+                <div class="shortcut"><kbd>Shift + →</kbd><span>Seek +10s</span></div>
+                <div class="shortcut"><kbd>Shift + ←</kbd><span>Seek -10s</span></div>
+                <div class="shortcut"><kbd>↑</kbd><span>Volume Up</span></div>
+                <div class="shortcut"><kbd>↓</kbd><span>Volume Down</span></div>
+                <div class="shortcut"><kbd>M</kbd><span>Mute/Unmute</span></div>
+                <div class="shortcut"><kbd>S</kbd><span>Shuffle Queue</span></div>
+                <div class="shortcut"><kbd>R</kbd><span>Toggle Repeat</span></div>
+                <div class="shortcut"><kbd>F</kbd><span>Fullscreen</span></div>
+                <div class="shortcut"><kbd>Q</kbd><span>Toggle Queue</span></div>
+                <div class="shortcut"><kbd>?</kbd><span>This Help</span></div>
+            </div>
+        </div>
+    </div>
+
     <div class="app">
         <!-- Header -->
         <header class="header">
@@ -29,9 +57,9 @@
                     type="text" 
                     id="search-input" 
                     class="search-input"
-                    placeholder="Search songs, albums, artists, or paste Spotify URL..."
+                    placeholder="Search music or paste ANY link (Spotify, Bandcamp, SoundCloud...)"
                     autocomplete="off"
-                    title="Search for music"
+                    title="Search or Import"
                 >
                 <button id="search-clear" class="search-clear" title="Clear search">×</button>
             </div>
@@ -41,6 +69,7 @@
                 <button class="type-btn active" data-type="track">Songs</button>
                 <button class="type-btn" data-type="album">Albums</button>
                 <button class="type-btn" data-type="artist">Artists</button>
+                <button class="type-btn" data-type="podcast">Podcasts</button>
             </div>
         </section>
 
@@ -59,6 +88,30 @@
             <button id="error-retry" class="btn-retry">Try Again</button>
         </div>
 
+        <!-- Download Modal -->
+        <div id="download-modal" class="modal hidden">
+            <div class="modal-content">
+                <h3>Download Track</h3>
+                <p id="download-track-name">Track Name</p>
+                
+                <div class="format-selector">
+                    <label>Select Format:</label>
+                    <select id="download-format">
+                        <option value="mp3">MP3 (320kbps)</option>
+                        <option value="flac">FLAC (Lossless)</option>
+                        <option value="aiff">AIFF (DJ Friendly)</option>
+                        <option value="wav">WAV (Lossless)</option>
+                        <option value="alac">ALAC (Apple Lossless)</option>
+                    </select>
+                </div>
+                
+                <div class="modal-actions">
+                    <button id="download-cancel-btn" class="btn-secondary">Cancel</button>
+                    <button id="download-confirm-btn" class="btn-primary">Download</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Results Section -->
         <section id="results-section" class="results-section">
             <div id="results-container" class="results-container">
@@ -75,7 +128,11 @@
         <section id="detail-view" class="detail-view hidden">
             <div class="detail-header">
                 <button id="back-btn" class="back-btn">← Back</button>
-                <button id="queue-all-btn" class="queue-all-btn">Add All to Queue</button>
+                <div class="detail-actions">
+                    <button id="shuffle-btn" class="shuffle-btn" title="Shuffle & Play">🔀 Shuffle</button>
+                    <button id="queue-all-btn" class="queue-all-btn">Add All to Queue</button>
+                    <button id="download-all-btn" class="download-all-btn">Download ZIP</button>
+                </div>
             </div>
             <div id="detail-info" class="detail-info">
                 <!-- Album/playlist info will be inserted here -->
@@ -89,7 +146,10 @@
         <section id="queue-section" class="queue-section hidden">
             <div class="queue-header">
                 <h3>Queue <span id="queue-count">(0)</span></h3>
-                <button id="queue-clear" class="queue-clear">Clear</button>
+                <div class="queue-controls">
+                    <button id="queue-clear" class="queue-clear">Clear</button>
+                    <button id="queue-close" class="queue-close-btn" title="Close Queue">×</button>
+                </div>
             </div>
             <div id="queue-container" class="queue-container">
                 <!-- Queue items will be inserted here -->
@@ -107,10 +167,14 @@
             </div>
             
             <div class="player-controls">
+                <button id="shuffle-queue-btn" class="control-btn" title="Shuffle Queue">⤭</button>
+                <button id="repeat-btn" class="control-btn" title="Repeat: Off">⟳</button>
                 <button id="prev-btn" class="control-btn" title="Previous">⏮</button>
                 <button id="play-btn" class="control-btn play-btn" title="Play/Pause">▶</button>
                 <button id="next-btn" class="control-btn" title="Next">⏭</button>
+                <button id="download-current-btn" class="control-btn" title="Download Current Track">⬇</button>
                 <button id="queue-btn" class="control-btn queue-toggle" title="Toggle Queue">☰</button>
+                <button id="fs-toggle-btn" class="control-btn" title="Full Screen">⤢</button>
             </div>
             
             <div class="player-progress">
@@ -118,10 +182,43 @@
                 <input type="range" id="progress-bar" class="progress-bar" min="0" max="100" value="0" title="Seek">
                 <span id="duration" class="time">0:00</span>
             </div>
+            
+            <div class="volume-controls">
+                <button id="mute-btn" class="control-btn volume-btn" title="Mute">🔊</button>
+                <input type="range" id="volume-slider" class="volume-slider" min="0" max="100" value="100" title="Volume">
+            </div>
         </div>
 
         <!-- Audio Element -->
         <audio id="audio-player" preload="auto"></audio>
+    </div>
+
+    <!-- Fullscreen Player Overlay (outside .app for proper fixed positioning) -->
+    <div id="fullscreen-player" class="fullscreen-player hidden">
+        <div class="fs-backdrop"></div>
+        <div class="fs-content">
+            <div class="fs-header">
+                 <button id="fs-close-btn" class="fs-close-btn">×</button>
+            </div>
+            <div class="fs-art-container">
+                <img id="fs-art" src="/static/icon.svg" alt="Album Art">
+            </div>
+            <div class="fs-info">
+                <h2 id="fs-title">No Track Playing</h2>
+                <p id="fs-artist">Select music to play</p>
+            </div>
+            <div class="fs-progress-container">
+                <span id="fs-current-time">0:00</span>
+                <input type="range" id="fs-progress-bar" class="progress-bar" min="0" max="100" value="0" title="Seek">
+                <span id="fs-duration">0:00</span>
+            </div>
+            <div class="fs-controls">
+                <button id="fs-prev-btn" class="fs-control-btn">⏮</button>
+                <button id="fs-play-btn" class="fs-control-btn play-btn">▶</button>
+                <button id="fs-next-btn" class="fs-control-btn">⏭</button>
+                <button id="fs-download-btn" class="fs-control-btn" title="Download">⬇</button>
+            </div>
+        </div>
     </div>
 
     <script src="/static/app.js"></script>
