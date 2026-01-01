@@ -113,7 +113,9 @@ class PodcastService:
                     "album_art": ep.get("image") or feed_data.get("image") or "/static/icon.svg",
                     "duration": duration_str,
                     "isrc": safe_id,
-                    "source": "podcast"
+                    "source": "podcast",
+                    "description": ep.get("description", ""),
+                    "datePublished": ep.get("datePublishedPretty", "")
                 })
             
             return {

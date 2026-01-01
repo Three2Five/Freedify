@@ -301,11 +301,13 @@ async def stream_audio(
     try:
         logger.info(f"Stream request for ISRC: {isrc}")
         
-        # For LINK: prefixed IDs pointing to direct audio files, redirect immediately
-        # This enables instant playback for podcasts without transcoding
+        # For LINK: prefixed IDs pointing to direct audio files, proxy the stream
+        # (Redirect causes CORS issues with Web Audio API equalizer)
         if isrc.startswith("LINK:"):
             import base64
+            import httpx
             from urllib.parse import urlparse
+            from fastapi.responses import StreamingResponse
             try:
                 encoded_url = isrc.replace("LINK:", "")
                 original_url = base64.urlsafe_b64decode(encoded_url).decode()
@@ -314,11 +316,30 @@ async def stream_audio(
                 parsed = urlparse(original_url)
                 audio_extensions = ('.mp3', '.m4a', '.ogg', '.wav', '.aac', '.opus')
                 if any(parsed.path.lower().endswith(ext) for ext in audio_extensions):
-                    logger.info(f"Redirecting to direct audio URL: {original_url[:60]}...")
-                    from fastapi.responses import RedirectResponse
-                    return RedirectResponse(url=original_url, status_code=302)
+                    logger.info(f"Proxying direct audio URL: {original_url[:60]}...")
+                    
+                    # Stream proxy - fetch and forward without transcoding
+                    async def stream_audio_proxy():
+                        async with httpx.AsyncClient(follow_redirects=True, timeout=60.0) as client:
+                            async with client.stream("GET", original_url) as response:
+                                async for chunk in response.aiter_bytes(chunk_size=65536):
+                                    yield chunk
+                    
+                    # Determine content type
+                    ext = parsed.path.lower().split('.')[-1]
+                    content_types = {
+                        'mp3': 'audio/mpeg', 'm4a': 'audio/mp4', 'ogg': 'audio/ogg',
+                        'wav': 'audio/wav', 'aac': 'audio/aac', 'opus': 'audio/opus'
+                    }
+                    content_type = content_types.get(ext, 'audio/mpeg')
+                    
+                    return StreamingResponse(
+                        stream_audio_proxy(),
+                        media_type=content_type,
+                        headers={"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=3600"}
+                    )
             except Exception as e:
-                logger.warning(f"Failed to decode LINK for redirect: {e}")
+                logger.warning(f"Failed to proxy LINK: {e}")
                 # Fall through to normal processing
         
         # Check cache

@@ -8,6 +8,7 @@ Stream music from anywhere. Search songs, albums, artists, or paste URLs from Sp
 - **Deezer-powered** - Search tracks, albums, or artists with no rate limits
 - **Live Show Search** - Search "Phish 2024" or "Grateful Dead 1977" to find live shows
 - **Podcast Search** - Search and stream podcasts via PodcastIndex API
+- **Episode Details** - Click any episode to see full title, description, and publish date
 - **URL Import** - Paste links from Spotify, Bandcamp, Soundcloud, Archive.org, Phish.in
 
 ### 🎵 Live Show Archives

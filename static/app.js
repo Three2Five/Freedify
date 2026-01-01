@@ -824,7 +824,15 @@ function showDetailView(item, tracks) {
     
     // Add click handlers
     $$('#detail-tracks .track-item').forEach((el, i) => {
-        el.addEventListener('click', () => playTrack(tracks[i]));
+        el.addEventListener('click', () => {
+            const track = tracks[i];
+            // Show podcast modal for podcast episodes, otherwise play directly
+            if (track.source === 'podcast' && track.description) {
+                showPodcastModal(track);
+            } else {
+                playTrack(track);
+            }
+        });
     });
     
     // Show detail view
@@ -2052,5 +2060,63 @@ syncBtn?.addEventListener('click', async () => {
         await uploadToDrive();
     } else {
         await downloadFromDrive();
+    }
+});
+
+// ========== PODCAST EPISODE DETAILS MODAL ==========
+const podcastModal = $('#podcast-modal');
+const podcastModalClose = $('#podcast-modal-close');
+const podcastModalArt = $('#podcast-modal-art');
+const podcastModalTitle = $('#podcast-modal-title');
+const podcastModalDate = $('#podcast-modal-date');
+const podcastModalDuration = $('#podcast-modal-duration');
+const podcastModalDescription = $('#podcast-modal-description');
+const podcastModalPlay = $('#podcast-modal-play');
+
+let currentPodcastEpisode = null;
+
+function showPodcastModal(track) {
+    if (!track || track.source !== 'podcast') return;
+    
+    currentPodcastEpisode = track;
+    
+    podcastModalArt.src = track.album_art || '/static/icon.svg';
+    podcastModalTitle.textContent = track.name;
+    podcastModalDate.textContent = track.datePublished || '';
+    podcastModalDuration.textContent = `Duration: ${track.duration}`;
+    
+    // Strip HTML tags from description and decode entities
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = track.description || 'No description available.';
+    podcastModalDescription.textContent = tempDiv.textContent || tempDiv.innerText;
+    
+    podcastModal.classList.remove('hidden');
+}
+
+function hidePodcastModal() {
+    podcastModal.classList.add('hidden');
+    currentPodcastEpisode = null;
+}
+
+// Close modal
+podcastModalClose?.addEventListener('click', hidePodcastModal);
+
+// Close on backdrop click
+podcastModal?.addEventListener('click', (e) => {
+    if (e.target === podcastModal) hidePodcastModal();
+});
+
+// Play button
+podcastModalPlay?.addEventListener('click', () => {
+    if (currentPodcastEpisode) {
+        playTrack(currentPodcastEpisode);
+        hidePodcastModal();
+    }
+});
+
+// Close on Escape key
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !podcastModal.classList.contains('hidden')) {
+        hidePodcastModal();
     }
 });
