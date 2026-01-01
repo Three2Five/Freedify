@@ -503,12 +503,14 @@ downloadConfirmBtn.addEventListener('click', async () => {
 
 
 function renderTrackCard(track) {
+    const year = track.release_date ? track.release_date.slice(0, 4) : '';
+    const artistYear = year ? `${escapeHtml(track.artists)} • ${year}` : escapeHtml(track.artists);
     return `
         <div class="track-item" data-id="${track.id}">
             <img class="track-album-art" src="${track.album_art || '/static/icon.svg'}" alt="Album art" loading="lazy">
             <div class="track-info">
                 <p class="track-name">${escapeHtml(track.name)}</p>
-                <p class="track-artist">${escapeHtml(track.artists)}</p>
+                <p class="track-artist">${artistYear}</p>
             </div>
             
             <div class="track-actions">
@@ -991,7 +993,8 @@ function updatePlayerUI() {
     // Basic Info
     playerBar.classList.remove('hidden');
     playerTitle.textContent = track.name;
-    playerArtist.textContent = track.artists;
+    const year = track.release_date ? track.release_date.slice(0, 4) : '';
+    playerArtist.textContent = year ? `${track.artists} • ${year}` : track.artists;
     playerArt.src = track.album_art || '/static/icon.svg';
 
     // DJ Mode Info
@@ -1412,7 +1415,8 @@ function toggleFullScreen() {
 function updateFullscreenUI(track) {
     if (!track) return;
     fsTitle.textContent = track.name;
-    fsArtist.textContent = track.artists;
+    const year = track.release_date ? track.release_date.slice(0, 4) : '';
+    fsArtist.textContent = year ? `${track.artists} • ${year}` : track.artists;
     fsArt.src = track.album_art || '/static/icon.svg';
     
     // Backdrop

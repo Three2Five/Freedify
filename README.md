@@ -1,12 +1,14 @@
 # Freedify - Music Streaming Web App
 
+*Last updated: January 1, 2026*
+
 Stream music from anywhere. Search songs, albums, artists, or paste URLs from Spotify, Bandcamp, Archive.org, Phish.in, and more.
 
 ## ✨ Features
 
-### 🧠 AI & Smart Features
+### 🧠 AI & Smart Features - Needs Gemini API Key to work
 - **AI Radio** - Infinite queue recommendations based on your seed track (prevents genre drift)
-- **DJ Mode** - AI-powered mixing tips (transition technique, timing, key compatibility)
+- **DJ Mode** - AI-powered mixing tips (transition technique, timing, key compatibility) - accuracy undetermined
 - **Mix Analysis** - Learn how to mix compatible tracks by Key and BPM
 
 ### 🔍 Search
@@ -17,7 +19,7 @@ Stream music from anywhere. Search songs, albums, artists, or paste URLs from Sp
 - **URL Import** - Paste links from Spotify, Bandcamp, Soundcloud, Archive.org, Phish.in
 
 ### 🎵 Live Show Archives
-- **Phish.in** - Search by year/month (e.g., `Phish 2025` or `Phish 2024/12`)
+- **Phish.in** - Search by year/month (e.g., Phish 2025 or Phish 2024/12)
 - **Archive.org** - Grateful Dead, Billy Strings, Ween, King Gizzard
 - **Direct URLs** - Paste any phish.in or archive.org show URL
 
@@ -29,24 +31,25 @@ Stream music from anywhere. Search songs, albums, artists, or paste URLs from Sp
 
 ### 💾 Download & Save
 - **Save to Drive** - Direct save to Google Drive (FLAC/AIFF/MP3)
-- **Single Tracks** - Download locally as `Artist - Song.ext`
-- **Full Albums/Playlists** - Batch download as `Artist - Album.zip`
+- **Single Tracks** - Download locally as Artist - Song.ext
+- **Full Albums/Playlists** - Batch download as Artist - Album.zip
 - **Multiple Formats** - FLAC, AIFF, ALAC, WAV, 320kbps MP3
 - **Current Track** - Press ⬇ on player bar or fullscreen to download now playing
 
 ### ⌨️ Keyboard Shortcuts
+
 | Key | Action |
 |-----|--------|
-| `Space` | Play/Pause |
-| `←` / `→` | Previous/Next track |
-| `Shift+←` / `Shift+→` | Seek -/+ 10 seconds |
-| `↑` / `↓` | Volume up/down |
-| `M` | Mute/Unmute |
-| `S` | Shuffle queue |
-| `R` | Cycle repeat mode |
-| `F` | Toggle fullscreen |
-| `Q` | Toggle queue |
-| `?` | Show shortcuts help |
+| Space | Play/Pause |
+| ← / → | Previous/Next track |
+| Shift+← / Shift+→ | Seek -/+ 10 seconds |
+| ↑ / ↓ | Volume up/down |
+| M | Mute/Unmute |
+| S | Shuffle queue |
+| R | Cycle repeat mode |
+| F | Toggle fullscreen |
+| Q | Toggle queue |
+| ? | Show shortcuts help |
 
 ### 📋 Queue Management
 - **Drag to Reorder** - Drag tracks to rearrange
@@ -75,10 +78,6 @@ Stream music from anywhere. Search songs, albums, artists, or paste URLs from Sp
 - **Save Tracks** - Save audio directly to your "Freedify" folder
 - **Cross-Device** - Sync playlists across devices
 - **Upload/Download** - Manual sync control
-
-### ☁️ Google Drive Sync
-- **Cross-Device** - Sync playlists across devices
-- **Upload/Download** - Manual sync control
 - **Privacy** - Uses Drive appDataFolder (hidden from Drive UI)
 
 ### 📱 Mobile Ready
@@ -86,6 +85,8 @@ Stream music from anywhere. Search songs, albums, artists, or paste URLs from Sp
 - **Responsive Design** - Works on any screen size
 - **320kbps MP3** - High quality streaming
 - **Lock Screen Controls** - Play/pause/skip from lock screen
+
+---
 
 ## 🚀 Quick Start
 
@@ -104,25 +105,17 @@ python -m uvicorn app.main:app --port 8000
 
 Open http://localhost:8000
 
+---
+
 ## 🌐 Deploy to Render
 
 1. Fork/push this repo to GitHub
-2. Go to [render.com](https://render.com) → New **Web Service**
+2. Go to render.com → New Web Service
 3. Connect your GitHub repo
-4. Render auto-detects `render.yaml`
-5. Click **Deploy**
+4. Render auto-detects render.yaml
+5. Click Deploy
 
-### ☁️ Google Drive Sync
-- **Save Tracks** - Save audio directly to your "Freedify" folder
-- **Cross-Device** - Sync playlists across devices
-- **Upload/Download** - Manual sync control
-- **Privacy** - Uses Drive appDataFolder (hidden from Drive UI)
-
-### 📱 Mobile Ready
-- **PWA Support** - Install on your phone's home screen
-- **Responsive Design** - Works on any screen size
-- **320kbps MP3** - High quality streaming
-- **Lock Screen Controls** - Play/pause/skip from lock screen
+---
 
 ## ⚙️ Environment Variables (Deployment Secrets)
 
@@ -135,7 +128,9 @@ When deploying to Render (or other hosts), set these in your Dashboard:
 | `PORT` | No | Default: 8000 |
 
 ### Optional Spotify Credentials (for high traffic)
+
 If you hit rate limits, you can add your own keys:
+
 | Variable | Description |
 |----------|-------------|
 | `SPOTIFY_CLIENT_ID` | Your App Client ID |
@@ -144,13 +139,19 @@ If you hit rate limits, you can add your own keys:
 | `PODCASTINDEX_KEY` | For Podcast Search (better results) |
 | `PODCASTINDEX_SECRET` | For Podcast Search (required if KEY is used) |
 
-**Live Show Search Examples:**
+---
+
+## Live Show Search Examples:
+
 - `Phish 2025` - All 2025 Phish shows
 - `Phish 2024/12` - December 2024 shows
 - `Grateful Dead 1977` - 1977 Dead from Archive.org
-- `Billy Strings 2023` - 2023 Billy shows
+- `KGLW 2025` - 2025 King Gizzard & the Wizard Lizard shows
 
-**Supported URL Sources:**
+---
+
+## Supported URL Sources:
+
 - Spotify (playlists, albums, tracks)
 - Bandcamp
 - Soundcloud
@@ -160,4 +161,5 @@ If you hit rate limits, you can add your own keys:
 - And 1000+ more via yt-dlp
 
 ---
-Made with 🎵 by music lovers, for music lovers.
+
+Made with 💖 by a music lover, for music lovers.

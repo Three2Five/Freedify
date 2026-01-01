@@ -3,7 +3,7 @@
  * Caches app shell for offline access
  */
 
-const CACHE_NAME = 'spotiflac-v4';
+const CACHE_NAME = 'spotiflac-v5';
 const STATIC_ASSETS = [
     '/',
     '/static/styles.css',
