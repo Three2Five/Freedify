@@ -1,9 +1,10 @@
-PyQt6
-pyqt6-tools
-pyqtdarktheme
+fastapi
+uvicorn
+httpx
+google-generativeai
+python-dotenv
 requests
 mutagen
 pyotp
 packaging
-pyinstaller
-DrissionPage
+# DrissionPage # Optional/Browser related

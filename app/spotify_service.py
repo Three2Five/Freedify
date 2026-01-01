@@ -20,6 +20,7 @@ class SpotifyService:
     """Service for fetching metadata from Spotify URLs (not for search)."""
     
     TOKEN_URL = "https://open.spotify.com/get_access_token?reason=transport&productType=web_player"
+    AUTH_URL = "https://accounts.spotify.com/api/token"
     API_BASE = "https://api.spotify.com/v1"
     
     # Regex patterns for Spotify URLs
@@ -31,14 +32,48 @@ class SpotifyService:
     }
     
     def __init__(self):
+        import os
         self.access_token: Optional[str] = None
+        self.client_id = os.environ.get("SPOTIFY_CLIENT_ID")
+        self.client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET")
+        self.sp_dc = os.environ.get("SPOTIFY_SP_DC")
         self.client = httpx.AsyncClient(timeout=30.0)
     
     async def _get_access_token(self) -> str:
-        """Get access token from Spotify web player."""
+        """Get access token (Client Creds > Cookie > Web Player > Embed)."""
         if self.access_token:
             return self.access_token
-        
+            
+        # 1. Try Client Credentials Flow
+        if self.client_id and self.client_secret:
+            try:
+                import base64
+                auth_str = f"{self.client_id}:{self.client_secret}"
+                b64_auth = base64.b64encode(auth_str.encode()).decode()
+                
+                headers = {
+                    "Authorization": f"Basic {b64_auth}",
+                    "Content-Type": "application/x-www-form-urlencoded"
+                }
+                data = {"grant_type": "client_credentials"}
+                
+                response = await self.client.post(self.AUTH_URL, headers=headers, data=data)
+                if response.status_code == 200:
+                    token_data = response.json()
+                    self.access_token = token_data.get("access_token")
+                    logger.info("Got Spotify token via Client Credentials")
+                    return self.access_token
+            except Exception as e:
+                logger.error(f"Client Credentials auth failed: {e}")
+
+        # 2. Try Cookie Auth (sp_dc) - Mimics logged-in Web Player
+        # This is the best fallback if Developer App creation is blocked
+        cookies = None
+        if self.sp_dc:
+            cookies = {"sp_dc": self.sp_dc}
+            logger.info("Using provided sp_dc cookie for authentication")
+
+        # 3. Web Player Token (Anonymous or Authenticated via Cookie)
         headers = {
             "User-Agent": get_random_user_agent(),
             "Accept": "application/json",
@@ -46,7 +81,18 @@ class SpotifyService:
         }
         
         try:
-            response = await self.client.get(self.TOKEN_URL, headers=headers)
+            # If cookies are passed, this request becomes authenticated!
+            response = await self.client.get(self.TOKEN_URL, headers=headers, cookies=cookies)
+            if response.status_code == 200:
+                data = response.json()
+                self.access_token = data.get("accessToken")
+                if self.access_token:
+                    logger.info(f"Got Spotify token via Web Player ({'Authenticated' if cookies else 'Anonymous'})")
+                    return self.access_token
+        except Exception as e:
+            logger.warning(f"Web Player token fetch failed: {e}")
+        
+        # 4. Fallback: Embed Page
             if response.status_code == 200:
                 data = response.json()
                 self.access_token = data.get("accessToken")
@@ -56,7 +102,7 @@ class SpotifyService:
         except Exception as e:
             logger.warning(f"Direct token fetch failed: {e}")
         
-        # Fallback: Extract from embed page
+        # 3. Fallback: Embed Page
         try:
             embed_url = "https://open.spotify.com/embed/track/4cOdK2wGLETKBW3PvgPWqT"
             response = await self.client.get(embed_url, headers={"User-Agent": get_random_user_agent()})
@@ -241,6 +287,131 @@ class SpotifyService:
         except Exception as e:
             logger.error(f"Error fetching Spotify artist {artist_id}: {e}")
             return None
+    
+    # ========== AUDIO FEATURES & CAMELOT ==========
+    
+    # Camelot Wheel: Maps (pitch_class, mode) to Camelot notation
+    # pitch_class: 0=C, 1=C#, 2=D, ..., 11=B
+    # mode: 1=Major (B), 0=Minor (A)
+    CAMELOT_MAP = {
+        (0, 1): "8B",   (0, 0): "5A",   # C Major / C Minor
+        (1, 1): "3B",   (1, 0): "12A",  # C# Major / C# Minor
+        (2, 1): "10B",  (2, 0): "7A",   # D Major / D Minor
+        (3, 1): "5B",   (3, 0): "2A",   # D# Major / D# Minor
+        (4, 1): "12B",  (4, 0): "9A",   # E Major / E Minor
+        (5, 1): "7B",   (5, 0): "4A",   # F Major / F Minor
+        (6, 1): "2B",   (6, 0): "11A",  # F# Major / F# Minor
+        (7, 1): "9B",   (7, 0): "6A",   # G Major / G Minor
+        (8, 1): "4B",   (8, 0): "1A",   # G# Major / G# Minor
+        (9, 1): "11B",  (9, 0): "8A",   # A Major / A Minor
+        (10, 1): "6B",  (10, 0): "3A",  # A# Major / A# Minor
+        (11, 1): "1B",  (11, 0): "10A", # B Major / B Minor
+    }
+    
+    def _to_camelot(self, key: int, mode: int) -> str:
+        """Convert Spotify key/mode to Camelot notation."""
+        return self.CAMELOT_MAP.get((key, mode), "?")
+    
+    async def search_track_by_isrc(self, isrc: str) -> Optional[str]:
+        """Search for a track by ISRC and return Spotify track ID."""
+        try:
+            data = await self._api_request("/search", {"q": f"isrc:{isrc}", "type": "track", "limit": 1})
+            tracks = data.get("tracks", {}).get("items", [])
+            if tracks:
+                return tracks[0].get("id")
+        except Exception as e:
+            logger.warning(f"ISRC search failed for {isrc}: {e}")
+        return None
+    
+    async def search_track_by_name(self, name: str, artist: str) -> Optional[str]:
+        """Search for a track by name and artist, return Spotify track ID."""
+        try:
+            # 1. Try strict search first
+            query = f"track:{name} artist:{artist}"
+            data = await self._api_request("/search", {"q": query, "type": "track", "limit": 1, "market": "US"})
+            tracks = data.get("tracks", {}).get("items", [])
+            if tracks:
+                return tracks[0].get("id")
+            
+            # 2. Fallback to loose search (just string matching)
+            # Remove special chars and extra artists for better matching
+            clean_name = name.split('(')[0].split('-')[0].strip()
+            clean_artist = artist.split(',')[0].strip() 
+            query = f"{clean_name} {clean_artist}"
+            data = await self._api_request("/search", {"q": query, "type": "track", "limit": 1, "market": "US"})
+            tracks = data.get("tracks", {}).get("items", [])
+            if tracks:
+                return tracks[0].get("id")
+                
+        except Exception as e:
+            logger.warning(f"Name search failed for {name} by {artist}: {e}")
+        return None
+
+    async def get_audio_features(self, track_id: str, isrc: str = None, name: str = None, artist: str = None) -> Optional[Dict[str, Any]]:
+        """Get audio features (BPM, key, energy) for a single track.
+        
+        If track_id starts with 'dz_' (Deezer), will try ISRC or name/artist lookup first.
+        """
+        spotify_id = track_id
+        
+        # Handle Deezer tracks - need to find Spotify equivalent
+        if track_id.startswith("dz_"):
+            spotify_id = None
+            # Try ISRC first
+            if isrc:
+                spotify_id = await self.search_track_by_isrc(isrc)
+            # Fallback to name/artist search
+            if not spotify_id and name and artist:
+                spotify_id = await self.search_track_by_name(name, artist)
+            
+            if not spotify_id:
+                logger.warning(f"Could not find Spotify ID for Deezer track {track_id}")
+                return None
+        
+        try:
+            data = await self._api_request(f"/audio-features/{spotify_id}")
+            return self._format_audio_features(data)
+        except Exception as e:
+            logger.error(f"Error fetching audio features for {spotify_id}: {e}")
+            return None
+
+    
+    async def get_audio_features_batch(self, track_ids: List[str]) -> List[Optional[Dict[str, Any]]]:
+        """Get audio features for multiple tracks (max 100 per request)."""
+        if not track_ids:
+            return []
+        
+        # Spotify API limit is 100 tracks per request
+        results = []
+        for i in range(0, len(track_ids), 100):
+            batch = track_ids[i:i+100]
+            try:
+                data = await self._api_request("/audio-features", {"ids": ",".join(batch)})
+                for features in data.get("audio_features", []):
+                    if features:
+                        results.append(self._format_audio_features(features))
+                    else:
+                        results.append(None)
+            except Exception as e:
+                logger.error(f"Error fetching batch audio features: {e}")
+                results.extend([None] * len(batch))
+        
+        return results
+    
+    def _format_audio_features(self, data: dict) -> dict:
+        """Format audio features for frontend."""
+        key = data.get("key", -1)
+        mode = data.get("mode", 0)
+        return {
+            "track_id": data.get("id"),
+            "bpm": round(data.get("tempo", 0)),
+            "key": key,
+            "mode": mode,
+            "camelot": self._to_camelot(key, mode) if key >= 0 else "?",
+            "energy": round(data.get("energy", 0), 2),
+            "danceability": round(data.get("danceability", 0), 2),
+            "valence": round(data.get("valence", 0), 2),  # "happiness"
+        }
     
     # ========== UTILITIES ==========
     

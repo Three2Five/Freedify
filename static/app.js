@@ -21,6 +21,8 @@ const state = {
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => document.querySelectorAll(s);
 
+// App.js v0101X
+
 const searchInput = $('#search-input');
 const searchClear = $('#search-clear');
 const typeBtns = $$('.type-btn');
@@ -95,7 +97,10 @@ searchInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
         e.preventDefault();
         clearTimeout(searchTimeout);
-        performSearch(searchInput.value.trim());
+        const query = searchInput.value.trim();
+        if (query) {
+            performSearch(query);
+        }
         searchInput.blur();
     }
 });
@@ -323,6 +328,10 @@ function renderResults(results, type) {
         grid.querySelectorAll('.track-item').forEach((el, i) => {
             el.addEventListener('click', () => playTrack(results[i]));
         });
+        // Fetch features regarding DJ Mode
+        if (state.djMode) {
+            fetchAudioFeaturesForTracks(results);
+        }
     } else if (type === 'album' || type === 'podcast') {
         const items = grid.querySelectorAll('.album-item');
         items.forEach((el, i) => {
@@ -503,6 +512,7 @@ function renderTrackCard(track) {
             </div>
             
             <div class="track-actions">
+                ${renderDJBadgeForTrack(track)}
                 <span class="track-duration">${track.duration}</span>
                 <button class="download-btn" title="Download" onclick="event.stopPropagation(); openDownloadModal('${encodeURIComponent(JSON.stringify(track))}')">
                     ⬇
@@ -599,7 +609,11 @@ function showDetailView(item, tracks) {
             </div>
             
             <div class="track-actions">
+                ${renderDJBadgeForTrack(t)}
                 <span class="track-duration">${t.duration}</span>
+                ${t.source === 'podcast' ? `
+                <button class="info-btn" title="Episode Details" onclick="event.stopPropagation(); showPodcastModal('${encodeURIComponent(JSON.stringify(t))}')">ℹ️</button>
+                ` : ''}
                 <button class="download-btn" title="Download" onclick="event.stopPropagation(); openDownloadModal('${encodeURIComponent(JSON.stringify(t))}')">
                     ⬇
                 </button>
@@ -619,6 +633,10 @@ function showDetailView(item, tracks) {
     // Show detail view
     detailView.classList.remove('hidden');
     resultsSection.classList.add('hidden');
+    
+    if (state.djMode && tracks.length > 0) {
+        fetchAudioFeaturesForTracks(tracks);
+    }
 }
 
 // ========== DOWNLOAD LOGIC ==========
@@ -676,6 +694,66 @@ downloadConfirmBtn.addEventListener('click', async () => {
     } catch (error) {
         console.error('Download error:', error);
         showError('Failed to download track. Please try again.');
+    }
+});
+
+// Configure Save to Drive button
+$('#download-drive-btn').addEventListener('click', async () => {
+    if (!trackToDownload) return;
+    
+    // Ensure signed in logic 
+    if (!googleAccessToken) {
+        await signInWithGoogle();
+        if (!googleAccessToken) return; // User cancelled or failed
+    }
+
+    const format = downloadFormat.value;
+    const track = trackToDownload;
+    
+    closeDownloadModal();
+    
+    showLoading(`Saving "${track.name}" to Google Drive (as ${format.toUpperCase()})...`);
+    
+    try {
+        // 1. Get Folder ID
+        const folderId = await findOrCreateFreedifyFolder();
+        if (!folderId) throw new Error('Could not find or create "Freedify" folder');
+        
+        // 2. Call Backend to Upload
+        const query = `${track.name} ${track.artists}`;
+        const isrc = track.isrc || track.id;
+        
+        // Construct filename
+        const filename = `${track.artists} - ${track.name}.${format === 'alac' ? 'm4a' : format}`.replace(/[\\/:"*?<>|]/g, "_");
+
+        const response = await fetch('/api/drive/upload', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                isrc: isrc,
+                access_token: googleAccessToken,
+                format: format,
+                folder_id: folderId,
+                filename: filename,
+                q: query
+            })
+        });
+        
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || 'Upload failed');
+        }
+        
+        const result = await response.json();
+        hideLoading();
+        showToast(`✅ Saved to Drive: ${result.name}`);
+        
+    } catch (error) {
+        console.error('Drive save error:', error);
+        hideLoading();
+        showError(`Failed to save to Drive: ${error.message}`);
     }
 });
 
@@ -906,21 +984,61 @@ function playTrack(track) {
     loadTrack(track);
 }
 
+function updatePlayerUI() {
+    if (state.currentIndex < 0 || !state.queue[state.currentIndex]) return;
+    const track = state.queue[state.currentIndex];
+    
+    // Basic Info
+    playerBar.classList.remove('hidden');
+    playerTitle.textContent = track.name;
+    playerArtist.textContent = track.artists;
+    playerArt.src = track.album_art || '/static/icon.svg';
+
+    // DJ Mode Info
+    const playerDJInfo = $('#player-dj-info');
+    if (state.djMode && playerDJInfo) {
+        // Use embedded audio_features for local tracks, cache for others
+        const isLocal = track.id?.startsWith('local_');
+        const feat = isLocal ? track.audio_features : state.audioFeaturesCache[track.id];
+        
+        if (feat) {
+            const camelotClass = feat.camelot ? `camelot-${feat.camelot}` : '';
+            playerDJInfo.innerHTML = `
+                <div class="dj-badge-container" style="display: flex;">
+                    <span class="dj-badge bpm-badge">${feat.bpm} BPM</span>
+                    <span class="dj-badge camelot-badge ${camelotClass}">${feat.camelot}</span>
+                </div>
+            `;
+            playerDJInfo.classList.remove('hidden');
+        } else {
+            // If active track is missing features, fetch them (debounce/check logic needed to avoid loop?)
+            // fetchAudioFeaturesForTracks([track]); // Avoiding loop, fetch should handle it
+            playerDJInfo.innerHTML = '<div class="dj-badge-placeholder"></div>';
+            playerDJInfo.classList.remove('hidden');
+        }
+    } else if (playerDJInfo) {
+        playerDJInfo.classList.add('hidden');
+    }
+
+    updateMediaSession(track);
+}
+
 async function loadTrack(track) {
     showLoading(`Loading "${track.name}"...`);
     playerBar.classList.remove('hidden');
     
-    // Update player UI
-    playerTitle.textContent = track.name;
-    playerArtist.textContent = track.artists;
-    playerArt.src = track.album_art || '/static/icon.svg';
+    playerBar.classList.remove('hidden');
     
-    updateMediaSession(track);
+    updatePlayerUI();
     updateQueueUI();
     updateFullscreenUI(track); // Sync FS
     
     // Play
-    audioPlayer.src = `/api/stream/${track.isrc || track.id}?q=${encodeURIComponent(track.name + ' ' + track.artists)}`;
+    if (track.is_local && track.src) {
+        audioPlayer.src = track.src;
+    } else {
+        audioPlayer.src = `/api/stream/${track.isrc || track.id}?q=${encodeURIComponent(track.name + ' ' + track.artists)}`;
+    }
     
     try {
         audioPlayer.load();
@@ -1134,6 +1252,28 @@ function preloadNextTrack() {
 
 // ========== MEDIA SESSION ==========
 function updateMediaSession(track) {
+    // DJ Mode Info in Player
+    const playerDJInfo = $('#player-dj-info');
+    if (state.djMode && playerDJInfo) {
+        const feat = state.audioFeaturesCache[track.id];
+        if (feat) {
+            const camelotClass = feat.camelot ? `camelot-${feat.camelot}` : '';
+            playerDJInfo.innerHTML = `
+                <div class="dj-badge-container" style="display: flex;">
+                    <span class="dj-badge bpm-badge">${feat.bpm} BPM</span>
+                    <span class="dj-badge camelot-badge ${camelotClass}">${feat.camelot}</span>
+                </div>
+            `;
+            playerDJInfo.classList.remove('hidden');
+        } else {
+            // Try to fetch if missing
+            fetchAudioFeaturesForQueue();
+            playerDJInfo.classList.add('hidden');
+        }
+    } else if (playerDJInfo) {
+        playerDJInfo.classList.add('hidden');
+    }
+
     if ('mediaSession' in navigator) {
         navigator.mediaSession.metadata = new MediaMetadata({
             title: track.name,
@@ -1278,6 +1418,28 @@ function updateFullscreenUI(track) {
     // Backdrop
     const backdrop = document.querySelector('.fs-backdrop');
     if (backdrop) backdrop.style.backgroundImage = `url('${track.album_art || '/static/icon.svg'}')`;
+    
+    // DJ Mode Info for Fullscreen
+    const fsDJInfo = $('#fs-dj-info');
+    if (state.djMode && fsDJInfo) {
+        const isLocal = track.id?.startsWith('local_');
+        const feat = isLocal ? track.audio_features : state.audioFeaturesCache[track.id];
+        
+        if (feat) {
+            const camelotClass = feat.camelot ? `camelot-${feat.camelot}` : '';
+            fsDJInfo.innerHTML = `
+                <div class="dj-badge-container" style="display: flex; justify-content: center; gap: 8px; margin-top: 8px;">
+                    <span class="dj-badge bpm-badge">${feat.bpm} BPM</span>
+                    <span class="dj-badge camelot-badge ${camelotClass}">${feat.camelot}</span>
+                </div>
+            `;
+            fsDJInfo.classList.remove('hidden');
+        } else {
+            fsDJInfo.classList.add('hidden');
+        }
+    } else if (fsDJInfo) {
+        fsDJInfo.classList.add('hidden');
+    }
     
     updateFSPlayBtn();
 }
@@ -1865,8 +2027,10 @@ audioPlayer.addEventListener('timeupdate', () => {
 // ========== GOOGLE DRIVE SYNC ==========
 // NOTE: You need to set your Google OAuth Client ID here
 const GOOGLE_CLIENT_ID = localStorage.getItem('freedify_google_client_id') || '';
-const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.appdata';
+// Expanded scope: appdata for favorites sync + drive.file for saving audio files
+const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file';
 const SYNC_FILENAME = 'freedify_playlists.json';
+const FREEDIFY_FOLDER_NAME = 'Freedify';
 
 let googleAccessToken = null;
 const syncBtn = $('#sync-btn');
@@ -1948,6 +2112,35 @@ async function findSyncFile() {
         return response.result.files?.[0] || null;
     } catch (e) {
         console.error('Error finding sync file:', e);
+        return null;
+    }
+}
+
+// Find or create "Freedify" folder in Drive root
+async function findOrCreateFreedifyFolder() {
+    try {
+        // Search for existing folder
+        const response = await gapi.client.drive.files.list({
+            q: `name='${FREEDIFY_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+            fields: 'files(id, name)'
+        });
+        
+        if (response.result.files && response.result.files.length > 0) {
+            return response.result.files[0].id;
+        }
+        
+        // Create folder if not found
+        const createResponse = await gapi.client.drive.files.create({
+            resource: {
+                name: FREEDIFY_FOLDER_NAME,
+                mimeType: 'application/vnd.google-apps.folder'
+            },
+            fields: 'id'
+        });
+        
+        return createResponse.result.id;
+    } catch (e) {
+        console.error('Error finding/creating folder:', e);
         return null;
     }
 }
@@ -2092,6 +2285,7 @@ function showPodcastModal(track) {
     
     podcastModal.classList.remove('hidden');
 }
+window.showPodcastModal = showPodcastModal;
 
 function hidePodcastModal() {
     podcastModal.classList.add('hidden');
@@ -2120,3 +2314,827 @@ document.addEventListener('keydown', (e) => {
         hidePodcastModal();
     }
 });
+
+// ========== DJ MODE ==========
+const djModeBtn = $('#dj-mode-btn');
+const djSetlistModal = $('#dj-setlist-modal');
+const djModalClose = $('#dj-modal-close');
+const djStyleSelect = $('#dj-style-select');
+const djSetlistLoading = $('#dj-setlist-loading');
+const djSetlistResults = $('#dj-setlist-results');
+const djOrderedTracks = $('#dj-ordered-tracks');
+const djGenerateBtn = $('#dj-generate-btn');
+const djApplyBtn = $('#dj-apply-btn');
+
+// Musical Key to Camelot Wheel conversion
+function musicalKeyToCamelot(key) {
+    if (!key) return null;
+    
+    // Normalize key: uppercase, handle sharps/flats
+    const normalized = key.trim()
+        .replace(/major/i, '')
+        .replace(/minor/i, 'm')
+        .replace(/♯/g, '#')
+        .replace(/♭/g, 'b')
+        .trim();
+    
+    // Mapping of musical keys to Camelot notation
+    // Minor keys (A column)
+    const minorKeys = {
+        'Abm': '1A', 'G#m': '1A',
+        'Ebm': '2A', 'D#m': '2A',
+        'Bbm': '3A', 'A#m': '3A',
+        'Fm': '4A',
+        'Cm': '5A',
+        'Gm': '6A',
+        'Dm': '7A',
+        'Am': '8A',
+        'Em': '9A',
+        'Bm': '10A',
+        'F#m': '11A', 'Gbm': '11A',
+        'Dbm': '12A', 'C#m': '12A'
+    };
+    
+    // Major keys (B column)
+    const majorKeys = {
+        'B': '1B',
+        'Gb': '2B', 'F#': '2B',
+        'Db': '3B', 'C#': '3B',
+        'Ab': '4B', 'G#': '4B',
+        'Eb': '5B', 'D#': '5B',
+        'Bb': '6B', 'A#': '6B',
+        'F': '7B',
+        'C': '8B',
+        'G': '9B',
+        'D': '10B',
+        'A': '11B',
+        'E': '12B'
+    };
+    
+    // Check minor first, then major
+    if (minorKeys[normalized]) return minorKeys[normalized];
+    if (majorKeys[normalized]) return majorKeys[normalized];
+    
+    // Try case-insensitive match
+    for (const [k, v] of Object.entries(minorKeys)) {
+        if (k.toLowerCase() === normalized.toLowerCase()) return v;
+    }
+    for (const [k, v] of Object.entries(majorKeys)) {
+        if (k.toLowerCase() === normalized.toLowerCase()) return v;
+    }
+    
+    // If already in Camelot format, return as-is
+    if (/^[1-9][0-2]?[AB]$/i.test(normalized)) {
+        return normalized.toUpperCase();
+    }
+    
+    return key; // Return original if no match
+}
+
+// DJ Mode state
+state.djMode = localStorage.getItem('freedify_dj_mode') === 'true';
+state.audioFeaturesCache = {}; // Cache audio features by track ID
+state.lastSetlistResult = null;
+
+// Initialize DJ mode on load
+if (state.djMode) {
+    document.body.classList.add('dj-mode-active');
+}
+
+// Toggle DJ mode
+djModeBtn?.addEventListener('click', () => {
+    state.djMode = !state.djMode;
+    localStorage.setItem('freedify_dj_mode', state.djMode);
+    document.body.classList.toggle('dj-mode-active', state.djMode);
+    
+    if (state.djMode) {
+        showToast('🎧 DJ Mode activated');
+        // Fetch audio features for current queue
+        if (state.queue.length > 0) {
+            fetchAudioFeaturesForQueue();
+        }
+    } else {
+        showToast('DJ Mode deactivated');
+    }
+});
+
+// Helper to render DJ Badge
+function renderDJBadgeForTrack(track) {
+    if (!state.djMode) return '';
+    
+    // For local tracks, use embedded audio_features directly (trust Serato)
+    const isLocal = track.id?.startsWith('local_');
+    const feat = isLocal ? track.audio_features : state.audioFeaturesCache[track.id];
+    
+    if (!feat) return '<div class="dj-badge-placeholder" data-id="' + track.id + '"></div>';
+    
+    const camelotClass = feat.camelot ? `camelot-${feat.camelot}` : '';
+    return `
+        <div class="dj-badge-container" style="display: flex;">
+            <span class="dj-badge bpm-badge">${feat.bpm} BPM</span>
+            <span class="dj-badge camelot-badge ${camelotClass}">${feat.camelot}</span>
+        </div>
+    `;
+}
+
+// Generic fetch features for any list of tracks
+async function fetchAudioFeaturesForTracks(tracks) {
+    if (!state.djMode || !tracks || tracks.length === 0) return;
+
+    // Filter out already cached AND local files (trust local metadata)
+    const tracksToFetch = tracks
+        .filter(t => t.id && !t.id.startsWith('LINK:') && !t.id.startsWith('pod_') && !t.id.startsWith('local_'))
+        .filter(t => !state.audioFeaturesCache[t.id])
+        .map(t => ({
+            id: t.id,
+            isrc: t.isrc || null,
+            name: t.name || null,
+            artists: t.artists || null
+        }));
+    
+    // De-duplicate by ID
+    const uniqueTracks = [];
+    const seenIds = new Set();
+    tracksToFetch.forEach(t => {
+        if (!seenIds.has(t.id)) {
+            seenIds.add(t.id);
+            uniqueTracks.push(t);
+        }
+    });
+    
+    if (uniqueTracks.length === 0) return;
+    
+    try {
+        const response = await fetch('/api/audio-features/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tracks: uniqueTracks })
+        });
+        
+        if (response.ok) {
+            const data = await response.json();
+            data.features.forEach((feat, i) => {
+                if (feat) {
+                    state.audioFeaturesCache[uniqueTracks[i].id] = feat;
+                }
+            });
+            // Trigger UI updates
+            updateDJBadgesInUI();
+            updatePlayerUI(); 
+        }
+    } catch (err) {
+        console.warn('Failed to fetch audio features:', err);
+    }
+}
+
+// Update all badges in DOM
+function updateDJBadgesInUI() {
+    // Update placeholders
+    $$('.dj-badge-placeholder').forEach(el => {
+        const id = el.dataset.id;
+        const feat = state.audioFeaturesCache[id];
+        if (feat) {
+            const camelotClass = feat.camelot ? `camelot-${feat.camelot}` : '';
+            el.outerHTML = `
+                <div class="dj-badge-container" style="display: flex;">
+                    <span class="dj-badge bpm-badge">${feat.bpm} BPM</span>
+                    <span class="dj-badge camelot-badge ${camelotClass}">${feat.camelot}</span>
+                </div>
+            `;
+        }
+    });
+
+    // Update Player
+    if (state.currentIndex >= 0 && state.queue[state.currentIndex]) {
+        updatePlayerUI();
+    }
+}
+
+// Fetch audio features for tracks in queue
+async function fetchAudioFeaturesForQueue() {
+    await fetchAudioFeaturesForTracks(state.queue);
+    addDJBadgesToQueue();
+}
+
+// Open DJ setlist modal
+function openDJSetlistModal() {
+    if (state.queue.length < 3) {
+        showToast('Add at least 3 tracks to queue for setlist generation');
+        return;
+    }
+    
+    djSetlistModal?.classList.remove('hidden');
+    djSetlistLoading?.classList.add('hidden');
+    djSetlistResults?.classList.add('hidden');
+    djApplyBtn?.classList.add('hidden');
+    state.lastSetlistResult = null;
+}
+
+function closeDJSetlistModal() {
+    djSetlistModal?.classList.add('hidden');
+}
+
+djModalClose?.addEventListener('click', closeDJSetlistModal);
+djSetlistModal?.addEventListener('click', (e) => {
+    if (e.target === djSetlistModal) closeDJSetlistModal();
+});
+
+// Generate setlist
+djGenerateBtn?.addEventListener('click', async () => {
+    // Ensure we have audio features
+    await fetchAudioFeaturesForQueue();
+    
+    // Build tracks data - use embedded audio_features for local, cache for others
+    const tracksData = state.queue.map(t => {
+        const isLocal = t.id.startsWith('local_');
+        const feat = isLocal ? t.audio_features : state.audioFeaturesCache[t.id];
+        return {
+            id: t.id,
+            name: t.name,
+            artists: t.artists,
+            bpm: feat?.bpm || 0,
+            camelot: feat?.camelot || '?',
+            energy: feat?.energy || 0.5
+        };
+    });
+    
+    djSetlistLoading?.classList.remove('hidden');
+    djSetlistResults?.classList.add('hidden');
+    
+    try {
+        const response = await fetch('/api/dj/generate-setlist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                tracks: tracksData,
+                style: djStyleSelect?.value || 'progressive'
+            })
+        });
+        
+        if (!response.ok) throw new Error('Generation failed');
+        
+        const result = await response.json();
+        state.lastSetlistResult = result;
+        
+        // Render results
+        renderSetlistResults(result, tracksData);
+        
+    } catch (err) {
+        console.error('Setlist generation error:', err);
+        showToast('Failed to generate setlist');
+    } finally {
+        djSetlistLoading?.classList.add('hidden');
+    }
+});
+
+function renderSetlistResults(result, tracksData) {
+    if (!djOrderedTracks) return;
+    
+    const trackMap = {};
+    tracksData.forEach(t => trackMap[t.id] = t);
+    state.queue.forEach(t => trackMap[t.id] = { ...trackMap[t.id], ...t });
+    
+    let html = '';
+    result.ordered_ids.forEach((id, i) => {
+        const track = trackMap[id];
+        if (!track) return;
+        
+        // Use embedded audio_features for local tracks, cache for others
+        const isLocal = id.startsWith('local_');
+        const feat = isLocal ? (track.audio_features || {}) : (state.audioFeaturesCache[id] || {});
+        const camelotClass = feat.camelot ? `camelot-${feat.camelot}` : '';
+        
+        html += `
+            <div class="dj-track-item">
+                <div class="dj-track-number">${i + 1}</div>
+                <div class="dj-track-info">
+                    <div class="dj-track-name">${escapeHtml(track.name)}</div>
+                    <div class="dj-track-artist">${escapeHtml(track.artists)}</div>
+                </div>
+                <div class="dj-track-meta">
+                    <span class="dj-badge bpm-badge">${feat.bpm || '?'} BPM</span>
+                    <span class="dj-badge camelot-badge ${camelotClass}">${feat.camelot || '?'}</span>
+                </div>
+            </div>
+        `;
+        
+        // Add transition tip if available
+        if (i < result.suggestions?.length) {
+            const sug = result.suggestions[i];
+            const tipClass = sug.harmonic_match ? 'harmonic' : (sug.bpm_diff > 8 ? 'caution' : '');
+            const technique = sug.technique ? `<span class="dj-technique-badge">${escapeHtml(sug.technique)}</span>` : '';
+            const timing = sug.timing ? `<span class="dj-timing">${escapeHtml(sug.timing)}</span>` : '';
+            const tipText = sug.tip ? escapeHtml(sug.tip) : '';
+            
+            html += `
+                <div class="dj-transition ${tipClass}">
+                    <div class="dj-transition-header">
+                        💡 ${technique} ${timing}
+                    </div>
+                    <div class="dj-transition-tip">${tipText}</div>
+                </div>
+            `;
+        }
+    });
+    
+    djOrderedTracks.innerHTML = html;
+    djSetlistResults?.classList.remove('hidden');
+    djApplyBtn?.classList.remove('hidden');
+    
+    // Show method used
+    const methodText = result.method === 'ai-gemini-2.0-flash' ? '✨ AI Generated' : '📊 Algorithm';
+    showToast(`${methodText} setlist ready!`);
+}
+
+// Apply setlist to queue
+djApplyBtn?.addEventListener('click', () => {
+    if (!state.lastSetlistResult?.ordered_ids) return;
+    
+    const trackMap = {};
+    state.queue.forEach(t => trackMap[t.id] = t);
+    
+    const newQueue = [];
+    state.lastSetlistResult.ordered_ids.forEach(id => {
+        if (trackMap[id]) newQueue.push(trackMap[id]);
+    });
+    
+    // Add any tracks not in the result (shouldn't happen but safety)
+    state.queue.forEach(t => {
+        if (!newQueue.find(q => q.id === t.id)) {
+            newQueue.push(t);
+        }
+    });
+    
+    state.queue = newQueue;
+    state.currentIndex = 0;
+    updateQueueUI();
+    
+    closeDJSetlistModal();
+    showToast('Queue reordered! Ready to mix 🎧');
+});
+
+// Add "Generate DJ Set" button to queue header
+const queueHeader = $('.queue-header');
+if (queueHeader) {
+    const djBtn = document.createElement('button');
+    djBtn.className = 'dj-generate-set-btn';
+    djBtn.innerHTML = '✨ Generate Set';
+    djBtn.addEventListener('click', openDJSetlistModal);
+    queueHeader.querySelector('.queue-controls')?.prepend(djBtn);
+}
+
+// Modify renderQueueItem to show DJ badges (override/extend existing)
+const originalUpdateQueue = typeof updateQueueUI !== 'undefined' ? updateQueueUI : null;
+function updateQueueWithDJ() {
+    originalUpdateQueue?.();
+    if (state.djMode && state.queue.length > 0) {
+        fetchAudioFeaturesForQueue().then(() => {
+            addDJBadgesToQueue();
+            // Also update player UI if needed
+            if (state.currentIndex >= 0) {
+                updatePlayerUI(); 
+            }
+        });
+    }
+}
+
+function addDJBadgesToQueue() {
+    if (!state.djMode) return;
+    
+    const queueItems = $$('#queue-container .queue-item');
+    queueItems.forEach((item, i) => {
+        if (i >= state.queue.length) return;
+        const track = state.queue[i];
+        const feat = state.audioFeaturesCache[track.id];
+        
+        // Remove existing badges
+        const existing = item.querySelector('.dj-badge-container');
+        if (existing) existing.remove();
+        
+        if (feat) {
+            const camelotClass = feat.camelot ? `camelot-${feat.camelot}` : '';
+            const badgeContainer = document.createElement('div');
+            badgeContainer.className = 'dj-badge-container';
+            badgeContainer.innerHTML = `
+                <span class="dj-badge bpm-badge">${feat.bpm} BPM</span>
+                <span class="dj-badge camelot-badge ${camelotClass}">${feat.camelot}</span>
+                <div class="energy-bar"><div class="energy-fill" style="width: ${feat.energy * 100}%"></div></div>
+            `;
+            item.querySelector('.queue-info')?.appendChild(badgeContainer);
+        }
+    });
+}
+
+// Escape key closes DJ modal
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !djSetlistModal?.classList.contains('hidden')) {
+        closeDJSetlistModal();
+    }
+});
+
+// ========== LOCAL FILE HANDLING ==========
+function initLocalFiles() {
+    initDragAndDrop();
+    initManualUpload();
+}
+
+function initDragAndDrop() {
+    // Attach to window to catch drops anywhere
+    const dropZone = window;
+
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
+    });
+
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    // Highlight drop zone (using body class)
+    window.addEventListener('dragenter', () => document.body.classList.add('dragging'), false);
+    window.addEventListener('dragleave', (e) => {
+        // Only remove if leaving the window
+        if (e.clientX === 0 && e.clientY === 0) {
+            document.body.classList.remove('dragging');
+        }
+    }, false);
+    
+    window.addEventListener('drop', (e) => {
+        document.body.classList.remove('dragging');
+        handleDrop(e);
+    }, false);
+    
+    console.log("Drag & Drop initialized on window");
+}
+
+function initManualUpload() {
+    // const addLocalBtn = document.getElementById('add-local-btn'); // Replaced by Label
+    const fileInput = document.getElementById('file-input');
+    
+    if (fileInput) {
+        console.log("Initializing Manual Upload via Label");
+        // No click listener needed for Label
+        
+        fileInput.addEventListener('change', (e) => {
+             console.log("File Input Changed", e.target.files);
+             if (e.target.files && e.target.files.length > 0) {
+                 handleFiles(e.target.files);
+             }
+        });
+    } else {
+        console.error("Could not find add-local-btn or file-input");
+    }
+}
+
+function handleDrop(e) {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    handleFiles(files);
+}
+
+async function handleFiles(files) {
+    // alert(`DEBUG: handleFiles called with ${files.length} files`);
+    console.log("HandleFiles Entry:", files.length);
+
+    const validExtensions = ['.mp3', '.flac', '.wav', '.aiff', '.aac', '.ogg', '.m4a', '.wma'];
+    
+    const audioFiles = Array.from(files).filter(file => {
+        const isAudio = file.type.startsWith('audio/') || 
+                       // Fallback: check extension if type is empty or generic
+                       validExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+        return isAudio;
+    });
+    
+    // DEBUG: Log files
+    // console.log("All files:", files);
+    
+    if (audioFiles.length === 0) {
+        if (files.length > 0) showToast('No supported audio files found', 'error');
+        return;
+    }
+
+    showLoading(`Processing ${audioFiles.length} local files...`);
+
+    let processedCount = 0;
+    for (const file of audioFiles) {
+        try {
+            const metadata = await extractMetadata(file);
+            if (metadata) { 
+                addLocalTrackToQueue(file, metadata);
+                processedCount++;
+            }
+        } catch (err) {
+            console.error('Error processing file:', file.name, err);
+            showToast(`Error reading ${file.name}`, 'error');
+        }
+    }
+    
+    hideLoading();
+    
+    if (processedCount > 0) {
+        showToast(`Added ${processedCount} local tracks to queue!`, 'success');
+        updateQueueUI();
+        if (!state.isPlaying && state.queue.length === processedCount) {
+             playTrack(0); // Auto play if queue was empty
+        }
+    }
+}
+
+function extractMetadata(file) {
+    return new Promise((resolve) => {
+        if (!window.jsmediatags) {
+            console.warn("jsmediatags not loaded");
+            resolve({ title: file.name, artist: 'Local File' });
+            return;
+        }
+
+        window.jsmediatags.read(file, {
+            onSuccess: (tag) => {
+                const tags = tag.tags;
+                console.log("Raw tags from jsmediatags:", Object.keys(tags)); // DEBUG: Show all tag names
+                
+                let picture = null;
+                if (tags.picture) {
+                    const { data, format } = tags.picture;
+                    let base64String = "";
+                    for (let i = 0; i < data.length; i++) {
+                        base64String += String.fromCharCode(data[i]);
+                    }
+                    picture = `data:${format};base64,${window.btoa(base64String)}`;
+                }
+
+                // Helper to extract tag value (handles both direct and .data formats)
+                const getTagValue = (tagName) => {
+                    const tag = tags[tagName];
+                    if (!tag) return null;
+                    if (typeof tag === 'string' || typeof tag === 'number') return tag;
+                    if (tag.data !== undefined) return tag.data;
+                    return null;
+                };
+
+                // Dynamic search: find any tag containing "bpm" in name
+                let bpm = null;
+                let key = null;
+                
+                for (const tagName of Object.keys(tags)) {
+                    const lowerName = tagName.toLowerCase();
+                    const val = getTagValue(tagName);
+                    
+                    if (!bpm && (lowerName.includes('bpm') || lowerName.includes('beats'))) {
+                        bpm = val;
+                        console.log(`Found BPM in tag "${tagName}":`, val);
+                    }
+                    if (!key && (lowerName.includes('key') || lowerName === 'tkey')) {
+                        key = val;
+                        console.log(`Found Key in tag "${tagName}":`, val);
+                    }
+                }
+                
+                // Parse BPM as integer
+                if (bpm) bpm = parseInt(String(bpm).replace(/\D/g, ''), 10) || null;
+                
+                console.log("Final Extracted BPM:", bpm, "Key:", key); // DEBUG
+
+                resolve({
+                    title: tags.title || file.name,
+                    artist: tags.artist || 'Local Artist',
+                    album: tags.album || 'Local Album',
+                    bpm: bpm,
+                    key: key,
+                    picture: picture
+                });
+            },
+            onError: (error) => {
+                console.warn('Metadata read error:', error);
+                resolve({ title: file.name, artist: 'Local File' });
+            }
+        });
+    });
+}
+
+function addLocalTrackToQueue(file, metadata) {
+    const blobUrl = URL.createObjectURL(file);
+    const safeId = `local_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Convert musical key to Camelot notation for color coding
+    const camelotKey = musicalKeyToCamelot(metadata.key);
+    
+    const track = {
+        id: safeId,
+        name: metadata.title,
+        artists: metadata.artist,
+        album: metadata.album,
+        album_art: metadata.picture || '/static/icon.svg',
+        duration: 'Unknown', 
+        isrc: safeId,
+        audio_features: {
+            bpm: metadata.bpm || 0,
+            camelot: camelotKey || (metadata.bpm ? '?' : null),
+            energy: 0.5, 
+            key: -1,
+            mode: 1
+        },
+        src: blobUrl, 
+        is_local: true
+    };
+    
+    state.queue.push(track);
+}
+
+// Initialize
+// Initialize
+document.addEventListener('DOMContentLoaded', () => {
+    initLocalFiles();
+});
+
+// Expose for inline HTML handlers
+window.handleFiles = handleFiles;
+window.extractMetadata = extractMetadata;
+
+// CSS for drag highlight
+const style = document.createElement('style');
+style.textContent = `
+    body.dragging {
+        border: 4px dashed #1db954;
+        opacity: 0.8;
+    }
+`;
+document.head.appendChild(style);
+
+// ========== AI RADIO ==========
+state.aiRadioActive = false;
+state.aiRadioFetching = false;
+state.aiRadioSeedTrack = null; // Store original seed track to prevent genre drift
+const aiRadioBtn = $('#ai-radio-btn');
+let aiRadioStatusEl = null;
+let aiRadioInterval = null;
+
+// Toggle AI Radio
+if (aiRadioBtn) {
+    aiRadioBtn.addEventListener('click', () => {
+        console.log('AI Radio button clicked!');
+        state.aiRadioActive = !state.aiRadioActive;
+        aiRadioBtn.classList.toggle('active', state.aiRadioActive);
+        
+        if (state.aiRadioActive) {
+            // Store the original seed track when AI Radio starts
+            const currentTrack = state.queue[Math.max(0, state.currentIndex)];
+            state.aiRadioSeedTrack = currentTrack ? {
+                name: currentTrack.name,
+                artists: currentTrack.artists,
+                bpm: currentTrack.audio_features?.bpm,
+                camelot: currentTrack.audio_features?.camelot
+            } : null;
+            console.log('AI Radio seed track:', state.aiRadioSeedTrack);
+            
+            showAIRadioStatus('AI Radio Active');
+            showToast('📻 AI Radio started! Will auto-add similar tracks.');
+            checkAndAddTracks(); // Start immediately
+            
+            // Set up periodic check every 2 minutes (120 seconds)
+            aiRadioInterval = setInterval(() => {
+                console.log('AI Radio periodic check...');
+                checkAndAddTracks();
+            }, 120000);
+        } else {
+            hideAIRadioStatus();
+            showToast('📻 AI Radio stopped');
+            state.aiRadioSeedTrack = null; // Clear seed track
+            
+            // Clear the interval
+            if (aiRadioInterval) {
+                clearInterval(aiRadioInterval);
+                aiRadioInterval = null;
+            }
+        }
+    });
+} else {
+    console.error('AI Radio button not found! #ai-radio-btn');
+}
+
+function showAIRadioStatus(message) {
+    if (!aiRadioStatusEl) {
+        aiRadioStatusEl = document.createElement('div');
+        aiRadioStatusEl.className = 'ai-radio-status';
+        document.body.appendChild(aiRadioStatusEl);
+    }
+    aiRadioStatusEl.innerHTML = `
+        <span class="spinner-small"></span>
+        <span>${message}</span>
+    `;
+    aiRadioStatusEl.style.display = 'flex';
+}
+
+function hideAIRadioStatus() {
+    if (aiRadioStatusEl) {
+        aiRadioStatusEl.style.display = 'none';
+    }
+}
+
+async function checkAndAddTracks() {
+    if (!state.aiRadioActive || state.aiRadioFetching) return;
+    
+    const remainingTracks = state.queue.length - Math.max(0, state.currentIndex) - 1;
+    console.log('AI Radio check:', { queueLen: state.queue.length, currentIndex: state.currentIndex, remaining: remainingTracks });
+    
+    // Add more tracks if we have less than 3 remaining
+    if (remainingTracks < 3) {
+        state.aiRadioFetching = true;
+        showAIRadioStatus('Finding similar tracks...');
+        
+        try {
+            // Use the ORIGINAL seed track stored when AI Radio started (prevents genre drift)
+            const seed = state.aiRadioSeedTrack;
+            
+            // Get current queue for exclusion
+            const queueTracks = state.queue.map(t => ({
+                name: t.name,
+                artists: t.artists
+            }));
+            
+            // If no seed, use a default mood
+            const requestBody = {
+                seed_track: seed,
+                mood: seed ? null : "popular music hits",
+                current_queue: queueTracks,
+                count: 5
+            };
+            
+            console.log('AI Radio request:', requestBody);
+            
+            const response = await fetch('/api/ai-radio/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestBody)
+            });
+            
+            if (response.ok) {
+                const data = await response.json();
+                console.log('AI Radio response:', data);
+                const searchTerms = data.search_terms || [];
+                
+                // Search and add tracks
+                let addedCount = 0;
+                for (const term of searchTerms) {
+                    if (addedCount >= 3) break; // Limit adds per batch
+                    
+                    try {
+                        const searchRes = await fetch(`/api/search?q=${encodeURIComponent(term)}&type=track`);
+                        if (searchRes.ok) {
+                            const searchData = await searchRes.json();
+                            const results = searchData.results || [];
+                            
+                            // Add first non-duplicate result
+                            for (const track of results.slice(0, 3)) {
+                                const isDupe = state.queue.some(q => 
+                                    q.id === track.id || 
+                                    (q.name?.toLowerCase() === track.name?.toLowerCase() && 
+                                     q.artists?.toLowerCase() === track.artists?.toLowerCase())
+                                );
+                                if (!isDupe) {
+                                    state.queue.push(track);
+                                    addedCount++;
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.warn('AI Radio search error:', e);
+                    }
+                }
+                
+                if (addedCount > 0) {
+                    updateQueueUI();
+                    showToast(`📻 Added ${addedCount} tracks to queue`);
+                }
+            }
+        } catch (err) {
+            console.error('AI Radio error:', err);
+        }
+        
+        state.aiRadioFetching = false;
+        if (state.aiRadioActive) {
+            showAIRadioStatus('AI Radio Active');
+        }
+    }
+}
+
+// Check when current track ends
+const originalPlayTrack = window.playTrack || playTrack;
+const aiRadioWrappedPlayTrack = async function(index) {
+    await originalPlayTrack(index);
+    if (state.aiRadioActive) {
+        setTimeout(checkAndAddTracks, 1000);
+    }
+};
+
+// Hook into track end
+audioPlayer?.addEventListener('ended', () => {
+    if (state.aiRadioActive) {
+        setTimeout(checkAndAddTracks, 500);
+    }
+});
+
+// alert("DEBUG: App.js initialization COMPLETE. If you see this, script is good.");
+console.log("App.js initialization COMPLETE");

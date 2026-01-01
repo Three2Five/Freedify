@@ -13,7 +13,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="stylesheet" href="/static/styles.css?v=2">
     <!-- Google API for Drive sync -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://apis.google.com/js/api.js" async defer></script>
@@ -52,6 +52,8 @@
         <header class="header">
             <h1 class="logo">🎵 Freedify</h1>
             <div class="header-actions">
+                <label for="file-input" class="header-btn" title="Add Local Songs (MP3/FLAC)" style="cursor: pointer; display: inline-flex; align-items: center; justify-content: center;">📂</label>
+                <button id="dj-mode-btn" class="header-btn" title="DJ Mode">🎧</button>
                 <button id="sync-btn" class="header-btn" title="Sync with Google Drive">☁️</button>
                 <button id="theme-btn" class="theme-btn" title="Change Theme">🎨</button>
             </div>
@@ -125,6 +127,7 @@
                 
                 <div class="modal-actions">
                     <button id="download-cancel-btn" class="btn-secondary">Cancel</button>
+                    <button id="download-drive-btn" class="btn-secondary" title="Save to Google Drive">☁️ Save to Drive</button>
                     <button id="download-confirm-btn" class="btn-primary">Download</button>
                 </div>
             </div>
@@ -182,6 +185,8 @@
                     <p id="player-title" class="player-title">No track playing</p>
                     <p id="player-artist" class="player-artist">-</p>
                 </div>
+                <!-- DJ Info Container -->
+                <div id="player-dj-info" class="player-dj-info hidden"></div>
             </div>
             
             <div class="player-controls">
@@ -191,6 +196,7 @@
                 <button id="play-btn" class="control-btn play-btn" title="Play/Pause">▶</button>
                 <button id="next-btn" class="control-btn" title="Next">⏭</button>
                 <button id="download-current-btn" class="control-btn" title="Download Current Track">⬇</button>
+                <button id="ai-radio-btn" class="control-btn ai-radio-btn" title="AI Radio - Auto-add similar tracks">📻</button>
                 <button id="queue-btn" class="control-btn queue-toggle" title="Toggle Queue">☰</button>
                 <button id="fs-toggle-btn" class="control-btn" title="Full Screen">⤢</button>
             </div>
@@ -228,19 +234,19 @@
                     <span class="eq-label">60Hz</span>
                 </div>
                 <div class="eq-band">
-                    <input type="range" id="eq-230" class="eq-slider" min="-12" max="12" value="0" orient="vertical">
+                    <input type="range" id="eq-230" class="eq-slider" min="-12" max="12" value="0">
                     <span class="eq-label">230Hz</span>
                 </div>
                 <div class="eq-band">
-                    <input type="range" id="eq-910" class="eq-slider" min="-12" max="12" value="0" orient="vertical">
+                    <input type="range" id="eq-910" class="eq-slider" min="-12" max="12" value="0">
                     <span class="eq-label">910Hz</span>
                 </div>
                 <div class="eq-band">
-                    <input type="range" id="eq-3600" class="eq-slider" min="-12" max="12" value="0" orient="vertical">
+                    <input type="range" id="eq-3600" class="eq-slider" min="-12" max="12" value="0">
                     <span class="eq-label">3.6kHz</span>
                 </div>
                 <div class="eq-band">
-                    <input type="range" id="eq-14000" class="eq-slider" min="-12" max="12" value="0" orient="vertical">
+                    <input type="range" id="eq-14000" class="eq-slider" min="-12" max="12" value="0">
                     <span class="eq-label">14kHz</span>
                 </div>
             </div>
@@ -276,6 +282,7 @@
             <div class="fs-info">
                 <h2 id="fs-title">No Track Playing</h2>
                 <p id="fs-artist">Select music to play</p>
+                <div id="fs-dj-info" class="fs-dj-info hidden"></div>
             </div>
             <div class="fs-progress-container">
                 <span id="fs-current-time">0:00</span>
@@ -306,6 +313,50 @@
         </div>
     </div>
 
-    <script src="/static/app.js"></script>
+    <!-- DJ Setlist Modal -->
+    <div id="dj-setlist-modal" class="dj-modal hidden">
+        <div class="dj-modal-content">
+            <div class="dj-modal-header">
+                <h2>🎧 AI DJ Setlist</h2>
+                <button id="dj-modal-close" class="dj-modal-close">×</button>
+            </div>
+            <div class="dj-modal-body">
+                <div class="dj-style-selector">
+                    <label>Set Style:</label>
+                    <select id="dj-style-select">
+                        <option value="progressive">Progressive (Build Energy)</option>
+                        <option value="peak-time">Peak Time (High Energy)</option>
+                        <option value="chill">Chill (Low-Med Energy)</option>
+                        <option value="journey">Journey (Wave Pattern)</option>
+                    </select>
+                </div>
+                <div id="dj-setlist-loading" class="dj-loading hidden">
+                    <div class="spinner"></div>
+                    <p>Analyzing tracks and generating setlist...</p>
+                </div>
+                <div id="dj-setlist-results" class="dj-results hidden">
+                    <div id="dj-ordered-tracks" class="dj-ordered-tracks"></div>
+                </div>
+            </div>
+            <div class="dj-modal-actions">
+                <button id="dj-generate-btn" class="btn-primary">✨ Generate Setlist</button>
+                <button id="dj-apply-btn" class="btn-secondary hidden">Apply to Queue</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden File Input (Moved to body end for reliability) -->
+    <input 
+        type="file" 
+        id="file-input" 
+        multiple 
+        accept="audio/*,.flac,.mp3,.wav,.aiff,.aac,.ogg,.m4a" 
+        style="position: fixed; top: -100px; left: -100px; opacity: 0; pointer-events: none;" 
+        onclick="this.value=null"
+        onchange="if(window.handleFiles) { window.handleFiles(this.files); } else { alert('Error: handleFiles not loaded'); }"
+    >
+
+    <script src="static/jsmediatags.min.js"></script>
+    <script src="/static/app.js?v=0101X"></script>
 </body>
 </html>

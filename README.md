@@ -4,9 +4,14 @@ Stream music from anywhere. Search songs, albums, artists, or paste URLs from Sp
 
 ## ✨ Features
 
+### 🧠 AI & Smart Features
+- **AI Radio** - Infinite queue recommendations based on your seed track (prevents genre drift)
+- **DJ Mode** - AI-powered mixing tips (transition technique, timing, key compatibility)
+- **Mix Analysis** - Learn how to mix compatible tracks by Key and BPM
+
 ### 🔍 Search
 - **Deezer-powered** - Search tracks, albums, or artists with no rate limits
-- **Live Show Search** - Search "Phish 2024" or "Grateful Dead 1977" to find live shows
+- **Live Show Search** - Search "Phish 2025" or "Grateful Dead 1977" to find live shows
 - **Podcast Search** - Search and stream podcasts via PodcastIndex API
 - **Episode Details** - Click any episode to see full title, description, and publish date
 - **URL Import** - Paste links from Spotify, Bandcamp, Soundcloud, Archive.org, Phish.in
@@ -22,8 +27,9 @@ Stream music from anywhere. Search songs, albums, artists, or paste URLs from Sp
 - **Shuffle** - Shuffle playlist or current queue
 - **Fullscreen Mode** - Click album art to expand
 
-### 💾 Download
-- **Single Tracks** - Download as `Artist - Song.ext`
+### 💾 Download & Save
+- **Save to Drive** - Direct save to Google Drive (FLAC/AIFF/MP3)
+- **Single Tracks** - Download locally as `Artist - Song.ext`
 - **Full Albums/Playlists** - Batch download as `Artist - Album.zip`
 - **Multiple Formats** - FLAC, AIFF, ALAC, WAV, 320kbps MP3
 - **Current Track** - Press ⬇ on player bar or fullscreen to download now playing
@@ -66,6 +72,11 @@ Stream music from anywhere. Search songs, albums, artists, or paste URLs from Sp
 - **Persistent** - Theme saved to localStorage
 
 ### ☁️ Google Drive Sync
+- **Save Tracks** - Save audio directly to your "Freedify" folder
+- **Cross-Device** - Sync playlists across devices
+- **Upload/Download** - Manual sync control
+
+### ☁️ Google Drive Sync
 - **Cross-Device** - Sync playlists across devices
 - **Upload/Download** - Manual sync control
 - **Privacy** - Uses Drive appDataFolder (hidden from Drive UI)
@@ -101,38 +112,37 @@ Open http://localhost:8000
 4. Render auto-detects `render.yaml`
 5. Click **Deploy**
 
-Live at `https://your-app.onrender.com`
+### ☁️ Google Drive Sync
+- **Save Tracks** - Save audio directly to your "Freedify" folder
+- **Cross-Device** - Sync playlists across devices
+- **Upload/Download** - Manual sync control
+- **Privacy** - Uses Drive appDataFolder (hidden from Drive UI)
 
-> **Note:** Free tier may take 30-60s to wake if idle.
+### 📱 Mobile Ready
+- **PWA Support** - Install on your phone's home screen
+- **Responsive Design** - Works on any screen size
+- **320kbps MP3** - High quality streaming
+- **Lock Screen Controls** - Play/pause/skip from lock screen
 
-## 📁 Project Structure
+## ⚙️ Environment Variables (Deployment Secrets)
 
-```
-├── app/
-│   ├── main.py              # FastAPI server
-│   ├── deezer_service.py    # Deezer search (primary)
-│   ├── spotify_service.py   # Spotify URL handling
-│   ├── live_show_service.py # Phish.in & Archive.org
-│   ├── podcast_service.py   # Podcast & Episode search
-│   ├── audio_service.py     # yt-dlp + FFmpeg streaming
-│   ├── cache.py             # File-based caching
-│   └── requirements.txt
-├── static/
-│   ├── index.html
-│   ├── app.js
-│   ├── styles.css
-│   └── manifest.json
-└── render.yaml              # Render deployment config
-```
+When deploying to Render (or other hosts), set these in your Dashboard:
 
-## ⚙️ Environment Variables
+| Variable | Required? | Description |
+|----------|-----------|-------------|
+| `GEMINI_API_KEY` | **YES** | Required for AI Radio and DJ Tips |
+| `MP3_BITRATE` | No | Default: 320k |
+| `PORT` | No | Default: 8000 |
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| MP3_BITRATE | 320k | Output MP3 bitrate |
-| PORT | 8000 | Server port |
-
-## 📝 Usage Tips
+### Optional Spotify Credentials (for high traffic)
+If you hit rate limits, you can add your own keys:
+| Variable | Description |
+|----------|-------------|
+| `SPOTIFY_CLIENT_ID` | Your App Client ID |
+| `SPOTIFY_CLIENT_SECRET` | Your App Client Secret |
+| `SPOTIFY_SP_DC` | Cookie for authenticated web player access |
+| `PODCASTINDEX_KEY` | For Podcast Search (better results) |
+| `PODCASTINDEX_SECRET` | For Podcast Search (required if KEY is used) |
 
 **Live Show Search Examples:**
 - `Phish 2025` - All 2025 Phish shows

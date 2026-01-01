@@ -2197,3 +2197,484 @@ body {
     transform: scale(1.02);
     box-shadow: 0 4px 15px var(--accent-glow);
 }
+
+/* ==================== DJ Mode ==================== */
+
+/* DJ Mode Active State */
+.dj-mode-active #dj-mode-btn {
+    color: var(--accent);
+    background: rgba(var(--accent-rgb, 29, 185, 84), 0.2);
+}
+
+/* BPM and Camelot Badges */
+.dj-badge-container {
+    display: none;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.dj-mode-active .dj-badge-container {
+    display: flex;
+}
+
+.dj-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.bpm-badge {
+    background: rgba(255, 255, 255, 0.15);
+    color: var(--text-secondary);
+}
+
+.camelot-badge {
+    color: white;
+    font-weight: 700;
+}
+
+/* Camelot Color Coding - Wheel positions 1-12 mapped to hue values */
+.camelot-1A, .camelot-1B { background: hsl(0, 70%, 45%); }
+.camelot-2A, .camelot-2B { background: hsl(30, 70%, 45%); }
+.camelot-3A, .camelot-3B { background: hsl(60, 70%, 40%); }
+.camelot-4A, .camelot-4B { background: hsl(90, 60%, 40%); }
+.camelot-5A, .camelot-5B { background: hsl(120, 60%, 35%); }
+.camelot-6A, .camelot-6B { background: hsl(150, 60%, 35%); }
+.camelot-7A, .camelot-7B { background: hsl(180, 60%, 35%); }
+.camelot-8A, .camelot-8B { background: hsl(210, 70%, 45%); }
+.camelot-9A, .camelot-9B { background: hsl(240, 60%, 50%); }
+.camelot-10A, .camelot-10B { background: hsl(270, 60%, 50%); }
+.camelot-11A, .camelot-11B { background: hsl(300, 60%, 45%); }
+.camelot-12A, .camelot-12B { background: hsl(330, 70%, 45%); }
+
+.energy-bar {
+    width: 40px;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.energy-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #4ade80, #facc15, #f87171);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+/* DJ Generate Set Button - Only visible in DJ mode when queue has tracks */
+.dj-generate-set-btn {
+    display: none;
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: var(--radius-full);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    margin-left: 8px;
+}
+
+.dj-mode-active .dj-generate-set-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.dj-generate-set-btn:hover {
+    transform: scale(1.05);
+    box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+}
+
+/* DJ Modal */
+.dj-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2500;
+    padding: 20px;
+    backdrop-filter: blur(10px);
+}
+
+.dj-modal-content {
+    background: var(--bg-elevated);
+    border-radius: var(--radius-lg);
+    max-width: 600px;
+    width: 100%;
+    max-height: 85vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    animation: slideUp 0.3s ease;
+}
+
+.dj-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--bg-tertiary);
+}
+
+.dj-modal-header h2 {
+    margin: 0;
+    font-size: 1.3rem;
+}
+
+.dj-modal-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 1.8rem;
+    cursor: pointer;
+    line-height: 1;
+}
+
+.dj-modal-close:hover {
+    color: var(--text-primary);
+}
+
+.dj-modal-body {
+    padding: 20px 24px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.dj-style-selector {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.dj-style-selector label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.dj-style-selector select {
+    flex: 1;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--bg-secondary);
+    color: var(--text-primary);
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.dj-loading {
+    text-align: center;
+    padding: 40px 20px;
+}
+
+.dj-loading p {
+    margin-top: 16px;
+    color: var(--text-secondary);
+}
+
+.dj-ordered-tracks {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.dj-track-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    transition: background 0.2s;
+}
+
+.dj-track-item:hover {
+    background: var(--bg-secondary);
+}
+
+.dj-track-number {
+    width: 28px;
+    height: 28px;
+    background: var(--accent);
+    color: black;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.85rem;
+    flex-shrink: 0;
+}
+
+.dj-track-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.dj-track-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dj-track-artist {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dj-track-meta {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.dj-transition {
+    padding: 8px 16px;
+    margin: 4px 0;
+    background: rgba(99, 102, 241, 0.1);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.dj-transition.harmonic {
+    border-left-color: #4ade80;
+    background: rgba(74, 222, 128, 0.1);
+}
+
+.dj-transition.caution {
+    border-left-color: #facc15;
+    background: rgba(250, 204, 21, 0.1);
+}
+
+.dj-transition-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.dj-technique-badge {
+    background: var(--accent);
+    color: white;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.dj-timing {
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+    font-style: italic;
+}
+
+.dj-transition-tip {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    line-height: 1.4;
+}
+.dj-modal-actions {
+    display: flex;
+    gap: 12px;
+    padding: 16px 24px;
+    border-top: 1px solid var(--bg-tertiary);
+}
+
+.dj-modal-actions .btn-primary {
+    flex: 1;
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: var(--radius-full);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.dj-modal-actions .btn-primary:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+}
+
+.dj-modal-actions .btn-secondary {
+    flex: 1;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: none;
+    padding: 12px 24px;
+    border-radius: var(--radius-full);
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.dj-modal-actions .btn-secondary:hover {
+    background: var(--bg-secondary);
+}
+
+/* ==================== Camelot Wheel Colors (Mixed In Key) ==================== */
+/* Minor keys (A column) - Inner wheel */
+.camelot-1A { background: #00c8ff !important; color: #000 !important; } /* Abm */
+.camelot-2A { background: #00a0e0 !important; color: #fff !important; } /* Ebm */
+.camelot-3A { background: #0080c0 !important; color: #fff !important; } /* Bbm */
+.camelot-4A { background: #0060a0 !important; color: #fff !important; } /* Fm */
+.camelot-5A { background: #004080 !important; color: #fff !important; } /* Cm */
+.camelot-6A { background: #400080 !important; color: #fff !important; } /* Gm */
+.camelot-7A { background: #800080 !important; color: #fff !important; } /* Dm */
+.camelot-8A { background: #c00060 !important; color: #fff !important; } /* Am */
+.camelot-9A { background: #e00040 !important; color: #fff !important; } /* Em */
+.camelot-10A { background: #ff4020 !important; color: #fff !important; } /* Bm */
+.camelot-11A { background: #ff8000 !important; color: #000 !important; } /* F#m */
+.camelot-12A { background: #ffc000 !important; color: #000 !important; } /* Dbm/C#m */
+
+/* Major keys (B column) - Outer wheel */
+.camelot-1B { background: #00e8ff !important; color: #000 !important; } /* B */
+.camelot-2B { background: #00c8e0 !important; color: #000 !important; } /* Gb/F# */
+.camelot-3B { background: #00a0c0 !important; color: #fff !important; } /* Db/C# */
+.camelot-4B { background: #0080a0 !important; color: #fff !important; } /* Ab */
+.camelot-5B { background: #006080 !important; color: #fff !important; } /* Eb */
+.camelot-6B { background: #600080 !important; color: #fff !important; } /* Bb */
+.camelot-7B { background: #a00080 !important; color: #fff !important; } /* F */
+.camelot-8B { background: #e00080 !important; color: #fff !important; } /* C */
+.camelot-9B { background: #ff0060 !important; color: #fff !important; } /* G */
+.camelot-10B { background: #ff6040 !important; color: #fff !important; } /* D */
+.camelot-11B { background: #ffa000 !important; color: #000 !important; } /* A */
+.camelot-12B { background: #ffe000 !important; color: #000 !important; } /* E */
+
+/* ==================== AI Search Toggle ==================== */
+.ai-search-toggle {
+    background: transparent;
+    border: 2px solid var(--text-tertiary);
+    color: var(--text-tertiary);
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-full);
+    cursor: pointer;
+    font-size: 1.2rem;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+}
+
+.ai-search-toggle:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    transform: scale(1.05);
+}
+
+.ai-search-toggle.active {
+    background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+    border-color: transparent;
+    color: white;
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.5);
+    animation: ai-pulse 2s infinite;
+}
+
+@keyframes ai-pulse {
+    0%, 100% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.5); }
+    50% { box-shadow: 0 0 30px rgba(168, 85, 247, 0.7); }
+}
+
+.ai-search-hint {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.1) 100%);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    border-radius: var(--radius-sm);
+    padding: 8px 16px;
+    margin-top: 8px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+.ai-search-hint strong {
+    color: var(--accent-light);
+}
+
+/* Adjust search container to fit AI toggle */
+.search-section .search-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* ==================== AI Radio ==================== */
+.ai-radio-btn.active {
+    background: linear-gradient(135deg, #6366f1 0%, #ec4899 100%);
+    color: white;
+    box-shadow: 0 0 15px rgba(99, 102, 241, 0.5);
+    animation: ai-radio-pulse 1.5s infinite;
+}
+
+@keyframes ai-radio-pulse {
+    0%, 100% { box-shadow: 0 0 15px rgba(99, 102, 241, 0.5); }
+    50% { box-shadow: 0 0 25px rgba(236, 72, 153, 0.7); }
+}
+
+.ai-radio-status {
+    position: fixed;
+    top: 80px;
+    right: 16px;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.95) 0%, rgba(236, 72, 153, 0.95) 100%);
+    color: white;
+    padding: 8px 16px;
+    border-radius: var(--radius-full);
+    font-size: 0.85rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+    z-index: 1000;
+    animation: ai-radio-status-slide 0.3s ease-out;
+}
+
+@keyframes ai-radio-status-slide {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+.ai-radio-status .spinner-small {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+/* Fix for deprecated slider-vertical */
+.eq-slider {
+    writing-mode: vertical-lr;
+    direction: rtl;
+    width: 6px;
+    height: 120px;
+    margin: 10px auto;
+    appearance: auto;
+}
+
+/* Ensure boost sliders allow horizontal */
+.eq-boost-slider {
+    width: 100%;
+    margin-top: 5px;
+}

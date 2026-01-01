@@ -23,6 +23,8 @@ from app.live_show_service import live_show_service
 from app.spotify_service import spotify_service
 from app.audio_service import audio_service
 from app.podcast_service import podcast_service
+from app.dj_service import dj_service
+from app.ai_radio_service import ai_radio_service
 from app.cache import cleanup_cache, periodic_cleanup, is_cached, get_cache_path
 
 # Configure logging
@@ -241,9 +243,9 @@ async def get_album(album_id: str):
             logger.info(f"Importing Phish.in show: {url}")
             album = await audio_service.import_url(url)
         elif album_id.startswith("pod_"):
-            # Podcast Import
-            collection_id = album_id.replace("pod_", "")
-            album = await podcast_service.get_podcast_episodes(collection_id)
+            # Podcast Import (PodcastIndex)
+            feed_id = album_id.replace("pod_", "")
+            album = await podcast_service.get_podcast_episodes(feed_id)
         else:
             # Unknown source - try Deezer
             album = await deezer_service.get_album(album_id)
@@ -412,6 +414,160 @@ async def download_audio(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ========== DJ MODE ENDPOINTS ==========
+
+class TrackForFeatures(BaseModel):
+    id: str
+    isrc: Optional[str] = None
+    name: Optional[str] = None
+    artists: Optional[str] = None
+
+
+class AudioFeaturesBatchRequest(BaseModel):
+    tracks: List[TrackForFeatures]
+
+
+class TrackForSetlist(BaseModel):
+    id: str
+    name: str
+    artists: str
+    bpm: int
+    camelot: str
+    energy: float
+
+
+class SetlistRequest(BaseModel):
+    tracks: List[TrackForSetlist]
+    style: str = "progressive"  # progressive, peak-time, chill, journey
+
+
+@app.get("/api/audio-features/{track_id}")
+async def get_audio_features(
+    track_id: str,
+    isrc: Optional[str] = Query(None),
+    name: Optional[str] = Query(None),
+    artist: Optional[str] = Query(None)
+):
+    """Get audio features (BPM, key, energy) for a track."""
+    try:
+        features = await spotify_service.get_audio_features(track_id, isrc, name, artist)
+        if not features:
+            raise HTTPException(status_code=404, detail="Audio features not found")
+        return features
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Audio features error for {track_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/audio-features/batch")
+async def get_audio_features_batch(request: AudioFeaturesBatchRequest):
+    """Get audio features for multiple tracks."""
+    try:
+        if not request.tracks:
+            return {"features": []}
+        
+        # Process each track, handling Deezer tracks with ISRC/name lookup
+        features = []
+        for track in request.tracks:
+            feat = await spotify_service.get_audio_features(
+                track.id, 
+                track.isrc, 
+                track.name, 
+                track.artists
+            )
+            
+            # Fallback to AI estimation if Spotify fails
+            if not feat and track.name and track.artists:
+                feat = await dj_service.get_audio_features_ai(track.name, track.artists)
+                if feat:
+                    feat['track_id'] = track.id  # Match requested ID for frontend cache
+            
+            features.append(feat)
+        
+        return {"features": features}
+    except Exception as e:
+        logger.error(f"Batch audio features error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        logger.error(f"Batch audio features error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/dj/generate-setlist")
+async def generate_setlist(request: SetlistRequest):
+    """Generate AI-optimized DJ setlist ordering."""
+    try:
+        tracks = [t.model_dump() for t in request.tracks]
+        result = await dj_service.generate_setlist(tracks, request.style)
+        return result
+    except Exception as e:
+        logger.error(f"Setlist generation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class MoodSearchRequest(BaseModel):
+    query: str
+
+
+@app.post("/api/search/mood")
+async def search_by_mood(request: MoodSearchRequest):
+    """Interpret a natural language mood query using AI and return search terms."""
+    try:
+        result = await dj_service.interpret_mood_query(request.query)
+        if not result:
+            # Fallback: just return the query as a search term
+            return {
+                "search_terms": [request.query],
+                "moods": [],
+                "bpm_range": None,
+                "energy": "medium",
+                "description": f"Searching for: {request.query}"
+            }
+        return result
+    except Exception as e:
+        logger.error(f"Mood search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SeedTrack(BaseModel):
+    name: str
+    artists: str
+    bpm: Optional[int] = None
+    camelot: Optional[str] = None
+
+
+class QueueTrack(BaseModel):
+    name: str
+    artists: str
+
+
+class AIRadioRequest(BaseModel):
+    seed_track: Optional[SeedTrack] = None
+    mood: Optional[str] = None
+    current_queue: Optional[List[QueueTrack]] = None
+    count: int = 5
+
+
+@app.post("/api/ai-radio/generate")
+async def generate_ai_radio_recommendations(request: AIRadioRequest):
+    """Generate AI Radio recommendations based on seed track or mood."""
+    try:
+        seed = request.seed_track.model_dump() if request.seed_track else None
+        queue = [t.model_dump() for t in request.current_queue] if request.current_queue else []
+        
+        result = await ai_radio_service.generate_recommendations(
+            seed_track=seed,
+            mood=request.mood,
+            current_queue=queue,
+            count=request.count
+        )
+        return result
+    except Exception as e:
+        logger.error(f"AI Radio error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 class BatchDownloadRequest(BaseModel):
     tracks: List[str]  # List of ISRCs or IDs
@@ -472,6 +628,73 @@ async def download_batch(request: BatchDownloadRequest):
         
     except Exception as e:
         logger.error(f"Batch download error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== GOOGLE DRIVE ==========
+
+class UploadToDriveRequest(BaseModel):
+    isrc: str
+    access_token: str
+    format: str = "aiff"
+    folder_id: Optional[str] = None
+    filename: Optional[str] = None
+    q: Optional[str] = None
+
+
+@app.post("/api/drive/upload")
+async def upload_to_drive(request: UploadToDriveRequest):
+    """Download audio, transcode, and upload to Google Drive."""
+    try:
+        logger.info(f"Drive upload request for {request.isrc} in {request.format}")
+        
+        # 1. Get Audio Data (reuse existing logic)
+        result = await audio_service.get_download_audio(request.isrc, request.q or "", request.format)
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="Could not fetch audio")
+        
+        data, ext, mime = result
+        filename = request.filename if request.filename else f"{request.isrc}{ext}"
+        if not filename.endswith(ext):
+            filename += ext
+            
+        # 2. Upload to Drive (Multipart upload for metadata + media)
+        metadata = {
+            'name': filename,
+            'mimeType': mime
+        }
+        if request.folder_id:
+            metadata['parents'] = [request.folder_id]
+        
+        import httpx
+        import json
+        
+        async with httpx.AsyncClient() as client:
+            # Multipart upload
+            files_param = {
+                'metadata': (None, json.dumps(metadata), 'application/json; charset=UTF-8'),
+                'file': (filename, data, mime)
+            }
+            
+            drive_response = await client.post(
+                'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+                headers={'Authorization': f'Bearer {request.access_token}'},
+                files=files_param,
+                timeout=300.0 # 5 minutes for upload
+            )
+            
+            if drive_response.status_code != 200:
+                logger.error(f"Drive upload failed: {drive_response.text}")
+                raise HTTPException(status_code=500, detail=f"Drive upload failed: {drive_response.text}")
+                
+            file_data = drive_response.json()
+            return {"file_id": file_data.get('id'), "name": file_data.get('name')}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Drive upload error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

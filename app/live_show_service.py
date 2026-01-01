@@ -73,7 +73,9 @@ class LiveShowService:
                 logger.warning(f"Phish.in API returned {response.status_code}")
                 return []
             
-            shows = response.json()
+            data = response.json()
+            # API v2 returns {'data': [...]} or {'shows': [...]} (observed 'shows' in testing)
+            shows = data.get('data', []) or data.get('shows', [])
             
             # Filter by month if specified
             if month:
@@ -92,7 +94,7 @@ class LiveShowService:
                     "type": "album",
                     "name": f"Phish - {date}",
                     "artists": "Phish",
-                    "album_art": "https://phish.in/static/logo.png",
+                    "album_art": "/static/icon.svg", # phish.in logo 404s, use local icon
                     "release_date": date,
                     "description": f"{venue_name}, {location}" if location else venue_name,
                     "total_tracks": show.get("tracks_count", 0),

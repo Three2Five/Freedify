@@ -12,7 +12,7 @@ from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# API Keys - MUST be set via environment variables (never commit real keys!)
+# API Keys - MUST be set via environment variables
 PODCASTINDEX_KEY = os.getenv("PODCASTINDEX_KEY", "")
 PODCASTINDEX_SECRET = os.getenv("PODCASTINDEX_SECRET", "")
 
@@ -28,6 +28,10 @@ class PodcastService:
 
     def _get_auth_headers(self) -> Dict[str, str]:
         """Generate authentication headers for PodcastIndex API."""
+        if not self.api_key or not self.api_secret:
+            logger.warning("PodcastIndex API keys are missing!")
+            return {}
+
         epoch_time = int(time.time())
         data_to_hash = self.api_key + self.api_secret + str(epoch_time)
         sha1_hash = hashlib.sha1(data_to_hash.encode('utf-8')).hexdigest()
@@ -42,6 +46,10 @@ class PodcastService:
     async def search_podcasts(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
         """Search for podcasts by term."""
         try:
+            if not self.api_key:
+                logger.error("Cannot search podcasts: Missing API Key")
+                return []
+
             params = {"q": query, "max": limit}
             response = await self.client.get(
                 f"{self.BASE_URL}/search/byterm",
@@ -65,6 +73,9 @@ class PodcastService:
     async def get_podcast_episodes(self, feed_id: str, limit: int = 50) -> Optional[Dict[str, Any]]:
         """Get episodes for a podcast by feed ID."""
         try:
+            if not self.api_key:
+                return None
+
             # First get feed info
             feed_response = await self.client.get(
                 f"{self.BASE_URL}/podcasts/byfeedid",
@@ -114,6 +125,7 @@ class PodcastService:
                     "duration": duration_str,
                     "isrc": safe_id,
                     "source": "podcast",
+                    # Metadata for Info Modal
                     "description": ep.get("description", ""),
                     "datePublished": ep.get("datePublishedPretty", "")
                 })
