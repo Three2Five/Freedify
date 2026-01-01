@@ -162,4 +162,9 @@ If you hit rate limits, you can add your own keys:
 
 ---
 
+## Credits
+Inspired by and built off of [Spotiflac](https://github.com/afkarxyz/Spotiflac) by afkarxyz.
+
+---
+
 Made with 💖 by a music lover, for music lovers.
