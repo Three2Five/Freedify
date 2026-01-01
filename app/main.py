@@ -301,6 +301,26 @@ async def stream_audio(
     try:
         logger.info(f"Stream request for ISRC: {isrc}")
         
+        # For LINK: prefixed IDs pointing to direct audio files, redirect immediately
+        # This enables instant playback for podcasts without transcoding
+        if isrc.startswith("LINK:"):
+            import base64
+            from urllib.parse import urlparse
+            try:
+                encoded_url = isrc.replace("LINK:", "")
+                original_url = base64.urlsafe_b64decode(encoded_url).decode()
+                
+                # Check if it's a direct audio file
+                parsed = urlparse(original_url)
+                audio_extensions = ('.mp3', '.m4a', '.ogg', '.wav', '.aac', '.opus')
+                if any(parsed.path.lower().endswith(ext) for ext in audio_extensions):
+                    logger.info(f"Redirecting to direct audio URL: {original_url[:60]}...")
+                    from fastapi.responses import RedirectResponse
+                    return RedirectResponse(url=original_url, status_code=302)
+            except Exception as e:
+                logger.warning(f"Failed to decode LINK for redirect: {e}")
+                # Fall through to normal processing
+        
         # Check cache
         if is_cached(isrc, "mp3"):
             cache_path = get_cache_path(isrc, "mp3")
