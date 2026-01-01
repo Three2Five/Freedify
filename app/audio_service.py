@@ -224,7 +224,19 @@ class AudioService:
             return None
 
     def _get_stream_url(self, url: str) -> Optional[str]:
-        """Get the actual stream URL from a page URL using yt-dlp."""
+        """Get the actual stream URL from a page URL using yt-dlp.
+        For direct audio files (.mp3, .m4a, etc.), return as-is.
+        """
+        # Check if URL is already a direct audio file
+        from urllib.parse import urlparse
+        parsed = urlparse(url)
+        path_lower = parsed.path.lower()
+        audio_extensions = ('.mp3', '.m4a', '.ogg', '.wav', '.aac', '.flac', '.opus')
+        if any(path_lower.endswith(ext) for ext in audio_extensions):
+            logger.info(f"Direct audio URL detected, bypassing yt-dlp: {url[:60]}...")
+            return url
+        
+        # Use yt-dlp for page URLs (YouTube, Bandcamp, etc.)
         info = self._extract_info_safe(url)
         if not info: return None
         if 'entries' in info: info = info['entries'][0]

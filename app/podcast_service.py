@@ -1,150 +1,147 @@
+"""
+Podcast service using PodcastIndex API.
+https://podcastindex-org.github.io/docs-api/
+"""
 import httpx
 import logging
+import hashlib
+import time
+import base64
+import os
 from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# API Keys - MUST be set via environment variables (never commit real keys!)
+PODCASTINDEX_KEY = os.getenv("PODCASTINDEX_KEY", "")
+PODCASTINDEX_SECRET = os.getenv("PODCASTINDEX_SECRET", "")
+
 class PodcastService:
-    """Service for searching and fetching podcasts via iTunes API."""
+    """Service for searching podcasts via PodcastIndex API."""
     
-    SEARCH_URL = "https://itunes.apple.com/search"
-    LOOKUP_URL = "https://itunes.apple.com/lookup"
+    BASE_URL = "https://api.podcastindex.org/api/1.0"
     
     def __init__(self):
-        self.client = httpx.AsyncClient(timeout=10.0)
+        self.client = httpx.AsyncClient(timeout=15.0)
+        self.api_key = PODCASTINDEX_KEY
+        self.api_secret = PODCASTINDEX_SECRET
+
+    def _get_auth_headers(self) -> Dict[str, str]:
+        """Generate authentication headers for PodcastIndex API."""
+        epoch_time = int(time.time())
+        data_to_hash = self.api_key + self.api_secret + str(epoch_time)
+        sha1_hash = hashlib.sha1(data_to_hash.encode('utf-8')).hexdigest()
+        
+        return {
+            "X-Auth-Key": self.api_key,
+            "X-Auth-Date": str(epoch_time),
+            "Authorization": sha1_hash,
+            "User-Agent": "Freedify/1.0"
+        }
 
     async def search_podcasts(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Search for podcasts."""
+        """Search for podcasts by term."""
         try:
-            params = {
-                "term": query,
-                "media": "podcast",
-                "entity": "podcast",
-                "limit": limit
-            }
-            response = await self.client.get(self.SEARCH_URL, params=params)
+            params = {"q": query, "max": limit}
+            response = await self.client.get(
+                f"{self.BASE_URL}/search/byterm",
+                params=params,
+                headers=self._get_auth_headers()
+            )
+            
             if response.status_code != 200:
+                logger.error(f"PodcastIndex search failed: {response.status_code}")
                 return []
                 
             data = response.json()
-            return [self._format_podcast(item) for item in data.get("results", [])]
+            feeds = data.get("feeds", [])
+            
+            return [self._format_podcast(feed) for feed in feeds[:limit]]
+            
         except Exception as e:
             logger.error(f"Podcast search error: {e}")
             return []
 
-    async def get_podcast_episodes(self, collection_id: str, limit: int = 50) -> Dict[str, Any]:
-        """Get podcast details and episodes."""
+    async def get_podcast_episodes(self, feed_id: str, limit: int = 50) -> Optional[Dict[str, Any]]:
+        """Get episodes for a podcast by feed ID."""
         try:
-            # First lookup the podcast metadata
-            params = {"id": collection_id, "entity": "podcast"}
-            response = await self.client.get(self.LOOKUP_URL, params=params)
+            # First get feed info
+            feed_response = await self.client.get(
+                f"{self.BASE_URL}/podcasts/byfeedid",
+                params={"id": feed_id},
+                headers=self._get_auth_headers()
+            )
             
-            if response.status_code != 200 or not response.json().get("results"):
-                return None
-                
-            podcast_data = response.json()["results"][0]
-            feed_url = podcast_data.get("feedUrl")
-            
-            if not feed_url:
-                return None
-
-            # Now parse the RSS feed (we'll need a simple XML parser or use a library)
-            # Since we can't easily add libraries like feedparser without user action, 
-            # we'll try to find an API that converts RSS to JSON or do basic parsing.
-            # Actually, iTunes Lookup doesn't return episodes.
-            # We can use rss2json.com api for free which is easy. 
-            # OR we can do a simple regex parse if the feed is standard.
-            # Let's use rss2json for simplicity and reliability.
-            
-            rss_response = await self.client.get(f"https://api.rss2json.com/v1/api.json?rss_url={feed_url}&api_key=your_api_key_here") 
-            # api.rss2json.com has limits on free tier. 
-            
-            # BETTER APPROACH: Just fetch the XML and do basic parsing with python's xml.etree.ElementTree
-            # It's built-in.
-            
-            feed_response = await self.client.get(feed_url, follow_redirects=True)
             if feed_response.status_code != 200:
+                logger.error(f"Failed to get feed info: {feed_response.status_code}")
                 return None
-                
-            return self._parse_rss(feed_response.text, podcast_data)
             
-        except Exception as e:
-            logger.error(f"Error fetching episodes for {collection_id}: {e}")
-            return None
-
-    def _parse_rss(self, xml_content: str, podcast_data: dict) -> Dict[str, Any]:
-        """Parse RSS XML content to extract episodes."""
-        # We'll use a robust way to parse XML
-        import xml.etree.ElementTree as ET
-        from email.utils import parsedate_to_datetime
-        
-        try:
-            root = ET.fromstring(xml_content)
-            channel = root.find("channel")
+            feed_data = feed_response.json().get("feed", {})
             
-            episodes = []
-            for item in channel.findall("item")[:50]: # Limit to 50
-                title = item.find("title").text if item.find("title") is not None else "Unknown Episode"
-                enclosure = item.find("enclosure")
-                
-                audio_url = None
-                if enclosure is not None:
-                    audio_url = enclosure.get("url")
-                else:
-                    # Try media:content
-                    media = item.find("{http://search.yahoo.com/mrss/}content")
-                    if media is not None:
-                        audio_url = media.get("url")
-                
-                if not audio_url: continue
+            # Get episodes
+            episodes_response = await self.client.get(
+                f"{self.BASE_URL}/episodes/byfeedid",
+                params={"id": feed_id, "max": limit},
+                headers=self._get_auth_headers()
+            )
+            
+            if episodes_response.status_code != 200:
+                logger.error(f"Failed to get episodes: {episodes_response.status_code}")
+                return None
+            
+            episodes_data = episodes_response.json().get("items", [])
+            
+            # Format episodes as tracks
+            tracks = []
+            for ep in episodes_data:
+                audio_url = ep.get("enclosureUrl")
+                if not audio_url:
+                    continue
                 
                 # Create ID that audio_service can decode (LINK:base64)
-                import base64
                 safe_id = f"LINK:{base64.urlsafe_b64encode(audio_url.encode()).decode()}"
                 
-                pub_date = item.find("pubDate").text if item.find("pubDate") is not None else ""
-                description = item.find("description").text if item.find("description") is not None else ""
+                duration_s = ep.get("duration", 0)
+                duration_str = f"{int(duration_s // 60)}:{int(duration_s % 60):02d}" if duration_s else "0:00"
                 
-                # Cleanup description (remove html tags)
-                import re
-                clean_desc = re.sub('<[^<]+?>', '', description)[:200] + "..." if description else ""
-
-                episodes.append({
+                tracks.append({
                     "id": safe_id,
                     "type": "track",
-                    "name": title,
-                    "artists": podcast_data.get("artistName", ""),
-                    "album": podcast_data.get("collectionName", ""),
-                    "album_art": podcast_data.get("artworkUrl600"),
-                    "duration": "0:00", # RSS duration is often messy formatted
-                    "preview_url": audio_url, # Full episode
-                    "is_direct_url": True,
+                    "name": ep.get("title", "Unknown Episode"),
+                    "artists": feed_data.get("author") or feed_data.get("title", "Unknown"),
+                    "album": feed_data.get("title", "Podcast"),
+                    "album_art": ep.get("image") or feed_data.get("image") or "/static/icon.svg",
+                    "duration": duration_str,
+                    "isrc": safe_id,
                     "source": "podcast"
                 })
             
             return {
-                "id": f"pod_{podcast_data['collectionId']}",
-                "type": "album", # Treat as album
-                "name": podcast_data.get("collectionName"),
-                "artists": podcast_data.get("artistName"),
-                "album_art": podcast_data.get("artworkUrl600"),
-                "tracks": episodes,
+                "id": f"pod_{feed_id}",
+                "type": "album",
+                "name": feed_data.get("title", "Unknown Podcast"),
+                "artists": feed_data.get("author") or "Podcast",
+                "image": feed_data.get("image") or "/static/icon.svg",
+                "album_art": feed_data.get("image") or "/static/icon.svg",
+                "tracks": tracks,
+                "total_tracks": len(tracks),
                 "source": "podcast"
             }
             
         except Exception as e:
-            logger.error(f"RSS Parse error: {e}")
+            logger.error(f"Error fetching episodes for feed {feed_id}: {e}")
             return None
 
-    def _format_podcast(self, item: dict) -> dict:
-        """Format iTunes result to app format."""
+    def _format_podcast(self, feed: dict) -> dict:
+        """Format PodcastIndex feed to app format."""
         return {
-            "id": f"pod_{item.get('collectionId')}",
-            "type": "album", # Display as album
+            "id": f"pod_{feed.get('id')}",
+            "type": "album",
             "is_podcast": True,
-            "name": item.get("collectionName"),
-            "artists": item.get("artistName"),
-            "album_art": item.get("artworkUrl600"),
+            "name": feed.get("title", "Unknown Podcast"),
+            "artists": feed.get("author") or feed.get("ownerName", "Unknown"),
+            "album_art": feed.get("image") or feed.get("artwork") or "/static/icon.svg",
+            "description": feed.get("description", "")[:150],
             "source": "podcast"
         }
 
