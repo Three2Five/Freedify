@@ -7,4 +7,4 @@ requests
 mutagen
 pyotp
 packaging
-# DrissionPage # Optional/Browser related
+yt-dlp

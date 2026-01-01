@@ -54,17 +54,17 @@ class AudioService:
     async def import_url(self, url: str) -> Optional[Dict[str, Any]]:
         """Import track or playlist from URL using yt-dlp."""
         try:
+            # Phish.in Custom Handler (Fast Path)
+            if "phish.in" in url:
+                logger.info("Detected Phish.in URL, using custom API handler")
+                phish_data = await self._import_phish_in(url)
+                if phish_data: return phish_data
+
             loop = asyncio.get_event_loop()
             info = await loop.run_in_executor(None, lambda: self._extract_info_safe(url))
             
             if not info:
                 return None
-            
-            # Phish.in Custom Handler
-            if "phish.in" in url:
-                logger.info("Detected Phish.in URL, using custom API handler")
-                phish_data = await self._import_phish_in(url)
-                if phish_data: return phish_data
             
             # Check if it's a playlist/album
             if 'entries' in info and info['entries']:
