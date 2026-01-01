@@ -446,6 +446,8 @@ class AudioService:
         """Embed metadata into audio file (MP3/FLAC)."""
         if not metadata: return audio_data
         
+        logger.info(f"Embedding metadata for {format}: {metadata.get('title')} - {metadata.get('year')}")
+        
         try:
             suffix = ".flac" if format == "flac" else ".mp3"
             with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
@@ -820,12 +822,12 @@ class AudioService:
         config = self.FORMAT_CONFIG.get(format, self.FORMAT_CONFIG["mp3"])
         cache_ext = format if format != "mp3_128" else "mp3_128"
         
-        
-        # Check cache (only provided if cached file has metadata, which we assume is true for downloads)
-        # Note: Streaming cache might not have tags, but for now we skip complex checking.
+        # Skip cache for downloads to ensure we get fresh metadata
+        # if is_cached(isrc, cache_ext):
+        #    ...
         
         # Fetch FLAC
-        logger.info(f"Fetching audio for download: {isrc}")
+        logger.info(f"Fetching audio for download (skipping cache to ensure tags): {isrc}")
         
         # Handle Imported Links
         if isrc.startswith("LINK:"):
