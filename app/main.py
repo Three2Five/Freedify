@@ -73,6 +73,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Middleware to set COOP header for Google OAuth popups
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    # Allow popups (like Google Sign-In) to communicate with window
+    response.headers["Cross-Origin-Opener-Policy"] = "same-origin-allow-popups"
+    return response
+
 
 # ========== MODELS ==========
 

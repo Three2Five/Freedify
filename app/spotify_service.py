@@ -372,7 +372,11 @@ class SpotifyService:
             data = await self._api_request(f"/audio-features/{spotify_id}")
             return self._format_audio_features(data)
         except Exception as e:
-            logger.error(f"Error fetching audio features for {spotify_id}: {e}")
+            # 403 Forbidden likely means token lacks permission (scraper token) or ID is invalid
+            if "403" in str(e):
+                logger.warning(f"Spotify 403 Forbidden for {spotify_id} (token permissions?)")
+            else:
+                logger.error(f"Error fetching audio features for {spotify_id}: {e}")
             return None
 
     
