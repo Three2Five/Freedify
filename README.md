@@ -1,10 +1,16 @@
 # Freedify - Music Streaming Web App
 
-*Last updated: January 2, 2026*
+*Last updated: January 3, 2026*
 
 Stream music and podcasts from anywhere. Search songs, albums, artists, podcasts or paste URLs from Spotify, SoundCloud, Bandcamp, Archive.org, Phish.in, and more.
 
 ## ✨ Features
+
+### 🎧 HiFi Streaming
+- **Lossless FLAC** - Toggle HiFi mode in the header for direct FLAC/AAC streaming from Tidal
+- **Fast Playback** - Audio starts in ~5 seconds (streams progressively, no transcode wait)
+- **Format Indicator** - Badge next to artist shows FLAC (green), AAC (green), or MP3 (grey)
+- **EQ Compatible** - Full equalizer support even with lossless streams
 
 ### 🧠 AI & Smart Features - Needs Gemini API Key to work
 - **AI Radio** - Infinite queue recommendations based on your seed track (prevents genre drift)
