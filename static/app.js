@@ -129,7 +129,7 @@ let pipWindow = null;
 // Crossfade / Gapless state
 let activePlayer = 1; // 1 or 2, which player is currently active
 let crossfadeEnabled = localStorage.getItem('freedify_crossfade') === 'true';
-const CROSSFADE_DURATION = 2000; // 2 seconds
+let CROSSFADE_DURATION = 1000; // Default: 1 second. Options: 500, 1000, 2000
 let crossfadeTimeout = null;
 let preloadedPlayer = null; // Ready player with next track loaded
 let preloadedReady = false; // True when preloaded track has fired canplaythrough
@@ -306,7 +306,7 @@ function renderPlaylistsView() {
             <div class="empty-state">
                 <span class="empty-icon">❤️</span>
                 <p>No saved playlists yet</p>
-                <p style="font-size: 0.9em; opacity: 0.7;">Import a Spotify playlist and click "Save to Favorites"</p>
+                <p style="font-size: 0.9em; opacity: 0.7;">Import a Spotify playlist and click "Save to Playlist"</p>
             </div>
         `;
         return;
@@ -1124,7 +1124,7 @@ function showDetailView(item, tracks) {
             <p class="detail-name">${escapeHtml(item.name)}</p>
             <p class="detail-artist">${escapeHtml(subtitle)}</p>
             <p class="detail-stats">${stats}</p>
-            ${!isSavedPlaylist && tracks.length > 0 ? `<button id="save-playlist-btn" class="save-playlist-btn">❤️ Save to Favorites</button>` : ''}
+            ${!isSavedPlaylist && tracks.length > 0 ? `<button id="save-playlist-btn" class="save-playlist-btn">Save to Playlist</button>` : ''}
         </div>
     `;
     
