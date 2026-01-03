@@ -196,7 +196,10 @@
                     <div class="player-details">
                         <p id="player-title" class="player-title">No track playing</p>
                         <div class="player-meta-row">
-                            <p id="player-artist" class="player-artist">-</p>
+                            <span id="player-artist" class="player-artist clickable" title="Search artist">-</span>
+                            <span class="player-separator">•</span>
+                            <span id="player-album" class="player-album clickable" title="View album">-</span>
+                            <span id="player-year" class="player-year"></span>
                             <span id="audio-format-badge" class="audio-format-badge hidden">MP3</span>
                         </div>
                     </div>
@@ -422,6 +425,6 @@
     <script src="static/jsmediatags.min.js"></script>
     <script src="https://apis.google.com/js/api.js"></script>
     <script src="https://accounts.google.com/gsi/client"></script>
-    <script src="/static/app.js?v=0103A"></script>
+    <script src="/static/app.js?v=0103B"></script>
 </body>
 </html>

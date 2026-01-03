@@ -553,10 +553,43 @@ body {
     text-overflow: ellipsis;
 }
 
+.player-artist.clickable,
+.player-album.clickable {
+    cursor: pointer;
+    transition: color 0.2s;
+}
+
+.player-artist.clickable:hover,
+.player-album.clickable:hover {
+    color: var(--accent-color);
+    text-decoration: underline;
+}
+
+.player-album {
+    color: var(--text-tertiary);
+    font-size: 0.8rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 150px;
+}
+
+.player-separator {
+    color: var(--text-tertiary);
+    font-size: 0.7rem;
+    flex-shrink: 0;
+}
+
+.player-year {
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+    flex-shrink: 0;
+}
+
 .player-meta-row {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
 }
 
 .audio-format-badge {

@@ -66,6 +66,8 @@ const playerBar = $('#player-bar');
 const playerArt = $('#player-art');
 const playerTitle = $('#player-title');
 const playerArtist = $('#player-artist');
+const playerAlbum = $('#player-album');
+const playerYear = $('#player-year');
 const playBtn = $('#play-btn');
 const prevBtn = $('#prev-btn');
 const nextBtn = $('#next-btn');
@@ -1197,8 +1199,21 @@ function updatePlayerUI() {
     // Basic Info
     playerBar.classList.remove('hidden');
     playerTitle.textContent = track.name;
-    const year = track.release_date ? track.release_date.slice(0, 4) : '';
-    playerArtist.textContent = year ? `${track.artists} • ${year}` : track.artists;
+    playerArtist.textContent = track.artists || '-';
+    
+    // Album name (clickable to open album)
+    if (playerAlbum) {
+        playerAlbum.textContent = track.album || '-';
+        playerAlbum.dataset.albumId = track.album_id || '';
+        playerAlbum.dataset.albumName = track.album || '';
+    }
+    
+    // Release year only (extract from YYYY-MM-DD)
+    if (playerYear) {
+        const year = track.release_date ? track.release_date.slice(0, 4) : '';
+        playerYear.textContent = year ? `(${year})` : '';
+    }
+    
     playerArt.src = track.album_art || '/static/icon.svg';
 
     // DJ Mode Info
@@ -1269,6 +1284,30 @@ async function updateFormatBadge(audioSrc) {
         // On error, just hide badge
         badge.classList.add('hidden');
     }
+}
+
+// Player artist/album click handlers for discovery
+if (playerArtist) {
+    playerArtist.addEventListener('click', () => {
+        const artistName = playerArtist.textContent;
+        if (artistName && artistName !== '-') {
+            state.searchType = 'artist';
+            document.querySelectorAll('.type-btn, .type-btn-menu').forEach(b => b.classList.remove('active'));
+            const artistBtn = document.querySelector('[data-type="artist"]');
+            if (artistBtn) artistBtn.classList.add('active');
+            searchInput.value = artistName;
+            performSearch(artistName);
+        }
+    });
+}
+
+if (playerAlbum) {
+    playerAlbum.addEventListener('click', () => {
+        const albumId = playerAlbum.dataset.albumId;
+        if (albumId) {
+            openAlbum(albumId);
+        }
+    });
 }
 
 async function loadTrack(track) {

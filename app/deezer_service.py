@@ -83,6 +83,7 @@ class DeezerService:
                     "duration": self._format_duration(item.get("duration", 0) * 1000),
                     "isrc": item.get("isrc"),
                     "preview_url": item.get("preview"),
+                    "release_date": data.get("release_date", ""),
                     "source": "deezer",
                 }
                 tracks.append(track)
