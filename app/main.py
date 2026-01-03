@@ -362,14 +362,21 @@ async def stream_audio(
                 parsed = urlparse(original_url)
                 audio_extensions = ('.mp3', '.m4a', '.ogg', '.wav', '.aac', '.opus')
                 if any(parsed.path.lower().endswith(ext) for ext in audio_extensions):
-                    logger.info(f"Proxying direct audio URL: {original_url[:60]}...")
+                    logger.info(f"Proxying direct audio URL (with seeking support): {original_url[:60]}...")
                     
-                    # Stream proxy - fetch and forward without transcoding
-                    async def stream_audio_proxy():
-                        async with httpx.AsyncClient(follow_redirects=True, timeout=60.0) as client:
-                            async with client.stream("GET", original_url) as response:
-                                async for chunk in response.aiter_bytes(chunk_size=65536):
-                                    yield chunk
+                    # Prepare headers to forward (especially Range)
+                    req_headers = {}
+                    if request.headers.get("Range"):
+                        req_headers["Range"] = request.headers.get("Range")
+                        logger.info(f"Forwarding Range header: {req_headers['Range']}")
+                    
+                    # Stream proxy with Range support
+                    # We use manual client management to inspect headers before streaming
+                    from starlette.background import BackgroundTask
+                    
+                    client = httpx.AsyncClient(follow_redirects=True, timeout=60.0)
+                    req = client.build_request("GET", original_url, headers=req_headers)
+                    r = await client.send(req, stream=True)
                     
                     # Determine content type
                     ext = parsed.path.lower().split('.')[-1]
@@ -377,12 +384,24 @@ async def stream_audio(
                         'mp3': 'audio/mpeg', 'm4a': 'audio/mp4', 'ogg': 'audio/ogg',
                         'wav': 'audio/wav', 'aac': 'audio/aac', 'opus': 'audio/opus'
                     }
-                    content_type = content_types.get(ext, 'audio/mpeg')
+                    content_type = r.headers.get("Content-Type") or content_types.get(ext, 'audio/mpeg')
+                    
+                    # Prepare response headers
+                    resp_headers = {
+                        "Accept-Ranges": "bytes",
+                        "Cache-Control": "public, max-age=3600"
+                    }
+                    if r.headers.get("Content-Range"):
+                        resp_headers["Content-Range"] = r.headers.get("Content-Range")
+                    if r.headers.get("Content-Length"):
+                        resp_headers["Content-Length"] = r.headers.get("Content-Length")
                     
                     return StreamingResponse(
-                        stream_audio_proxy(),
+                        r.aiter_bytes(chunk_size=65536),
+                        status_code=r.status_code, # Should represent 206 if Range was respected
                         media_type=content_type,
-                        headers={"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=3600"}
+                        headers=resp_headers,
+                        background=BackgroundTask(client.aclose)
                     )
             except Exception as e:
                 logger.warning(f"Failed to proxy LINK: {e}")

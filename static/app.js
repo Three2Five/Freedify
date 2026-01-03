@@ -46,8 +46,15 @@ document.addEventListener('click', (e) => {
     
     if (sourceTracks.length === 0) return;
     
+    // Don't auto-queue podcast episodes - let user view details and explicitly play
+    const clickedTrack = sourceTracks[index];
+    if (clickedTrack && clickedTrack.source === 'podcast') {
+        // Show the podcast modal instead of queuing
+        showPodcastModal(encodeURIComponent(JSON.stringify(clickedTrack)));
+        return;
+    }
+    
     const remainingTracks = sourceTracks.slice(index);
-    const clickedTrack = remainingTracks[0];
     
     state.queue = remainingTracks;
     state.currentIndex = 0;
@@ -1680,7 +1687,7 @@ function handleTimeUpdate() {
 
 progressBar.addEventListener('input', (e) => {
     const player = getActivePlayer();
-    if (player.duration) {
+    if (player.duration && Number.isFinite(player.duration)) {
         player.currentTime = (e.target.value / 100) * player.duration;
     }
 });
