@@ -3205,3 +3205,155 @@ body {
     background: #000;
     border-bottom: 1px solid #404040;
 }
+
+/* ==================== Mobile Player Bar Optimization ==================== */
+
+/* Ensure More Menu uses 3x3 Grid (Desktop & Mobile) */
+.more-menu-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+    gap: 8px !important;
+    padding: 8px;
+}
+
+/* Adjust menu width if needed */
+.player-more-menu {
+    width: auto !important;
+    min-width: 180px;
+}
+
+/* Mobile Layout Changes */
+@media (max-width: 768px) {
+    /* Height and spacing */
+    .player-bar {
+        height: auto;
+        padding: 12px 14px 20px 14px; /* More bottom padding for safe area */
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .player-main-row {
+        flex-direction: row;
+        flex-wrap: wrap; /* Allow wrapping */
+        align-items: center;
+        width: 100%;
+    }
+    
+    /* Info takes full width or shares row? 
+       User asked for layers: Art/Info above, Controls below/right.
+       Start with Info taking full width for clarity initially.
+    */
+    .player-info {
+        width: 100%;
+        margin-right: 0;
+        margin-bottom: 8px;
+        padding-right: 0;
+        border-right: none;
+    }
+    
+    .player-details {
+        max-width: calc(100% - 60px); /* Leave room for art */
+    }
+    
+    /* Controls take full width below */
+    .player-controls-primary {
+        width: 100%;
+        justify-content: space-evenly;
+        margin-left: 0;
+        gap: 0;
+    }
+    
+    /* Larger touch targets */
+    .control-btn {
+        width: 48px;
+        height: 48px;
+        font-size: 1.2rem;
+    }
+    
+    /* Play button prominent */
+    .play-btn {
+        transform: scale(1.1);
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+    }
+    
+    /* Ensure metadata wraps nicely on mobile */
+    .player-meta-row {
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 4px;
+    }
+
+    /* Progress bar adjustments */
+    .player-progress {
+        width: 100%;
+        margin-top: 5px;
+    }
+    
+    /* Mobile text sizes */
+    .player-title {
+        font-size: 1rem;
+    }
+    
+    .player-artist {
+        font-size: 0.9rem;
+        opacity: 0.8;
+    }
+    
+    /* Ensure more menu popup aligns correctly on mobile */
+    .player-more-menu {
+        bottom: 80px;
+        right: 10px;
+    }
+}
+
+/* ==================== Branding & UI Polish ==================== */
+.brand-text {
+    background: linear-gradient(to right, #8b5cf6, #ff00ff); /* Dark Purple to Neon Pink */
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    font-family: 'Permanent Marker', cursive; /* Brush Style Font */
+    font-weight: 400; /* Permanent Marker is bold by default */
+    letter-spacing: 1px;
+    filter: drop-shadow(0 0 4px rgba(255, 0, 255, 0.4)); /* Stronger glow */
+    font-size: 1.4rem; /* 30% smaller than 2rem */
+}
+
+
+/* Padding for Progress Numbers (Fix Clipping) */
+.player-progress {
+    padding: 6px 0 !important;
+    width: 100%;
+}
+
+/* Taller Progress Bar with Dynamic Fill */
+.progress-bar, #fs-progress-bar {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 8px !important;
+    border-radius: 4px;
+    background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--value, 0%), #404040 var(--value, 0%), #404040 100%);
+    cursor: pointer;
+    outline: none;
+    margin: 0;
+}
+
+/* Thumb Styling */
+.progress-bar::-webkit-slider-thumb, 
+#fs-progress-bar::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: #ffffff;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 5px rgba(0,0,0,0.5);
+    transition: transform 0.1s;
+}
+
+.progress-bar::-webkit-slider-thumb:hover, 
+#fs-progress-bar::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+}

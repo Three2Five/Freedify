@@ -1632,6 +1632,10 @@ function handleTimeUpdate() {
         fsDuration.textContent = duration.textContent;
         fsProgressBar.value = progressBar.value;
         
+        // Update CSS variable for gradient fill
+        progressBar.style.setProperty('--value', progressBar.value + '%');
+        fsProgressBar.style.setProperty('--value', progressBar.value + '%');
+        
         // Scrobble Check (50% or 4 mins)
         if (!state.scrobbledCurrent && state.queue[state.currentIndex]) {
             if (player.currentTime > 240 || player.currentTime > player.duration / 2) {
@@ -1689,6 +1693,8 @@ progressBar.addEventListener('input', (e) => {
     const player = getActivePlayer();
     if (player.duration && Number.isFinite(player.duration)) {
         player.currentTime = (e.target.value / 100) * player.duration;
+        e.target.style.setProperty('--value', e.target.value + '%');
+        if (typeof fsProgressBar !== 'undefined') fsProgressBar.style.setProperty('--value', e.target.value + '%');
     }
 });
 
