@@ -6,13 +6,15 @@ Stream music and podcasts from anywhere. Search songs, albums, artists, podcasts
 
 ## ✨ Features
 
-### 🎧 HiFi Streaming
-- **Lossless FLAC** - Toggle HiFi mode in the header for direct FLAC/AAC streaming from Tidal
+### 🎧 HiFi & Hi-Res Streaming
+- **Lossless FLAC** - Direct 16-bit FLAC streaming from Tidal (HiFi)
+- **Hi-Res Audio** - **24-bit/96kHz** support powered by **Dab Music** (Qobuz Proxy)
+- **Direct Stream** - No more MP3 transcoding! Fast, pure lossless audio.
 - **Fast Playback** - Audio starts in ~5 seconds (streams progressively, no transcode wait)
 - **Format Indicator** - Badge next to artist shows FLAC (green), AAC (green), or MP3 (grey)
 - **EQ Compatible** - Full equalizer support even with lossless streams
 - **Seek Support** - Instant seeking/skipping even while streaming HiFi
-- **Gapless Playback** - Seamless music transitions (default) with optional 2-second crossfade
+- **Gapless Playback** - Seamless music transitions (default) with optional 1-second crossfade
 - **Music Discovery** - Click Artist name to search or Album name to view full tracklist instantly
 
 ### 🧠 AI & Smart Features - Needs Gemini API Key to work
@@ -58,7 +60,7 @@ Stream music and podcasts from anywhere. Search songs, albums, artists, podcasts
 - **Save to Drive** - Direct save to Google Drive (FLAC/AIFF/MP3)
 - **Single Tracks** - Download locally as Artist - Song.ext
 - **Full Albums/Playlists** - Batch download as Artist - Album.zip
-- **Multiple Formats** - FLAC, AIFF, ALAC, WAV, 320kbps MP3
+- **Multiple Formats** - FLAC (Hi-Res), WAV (16/24-bit), AIFF (16/24-bit), ALAC, 320kbps MP3
 - **Current Track** - Press ⬇ on player bar or fullscreen to download now playing
 - **MusicBrainz Metadata** - Downloads enriched with release year, label, and high-res cover art
 
@@ -170,6 +172,8 @@ If you hit rate limits, you can add your own keys:
 | `PODCASTINDEX_SECRET` | For Podcast Search (required if KEY is used) |
 | `SETLIST_FM_API_KEY` | For Setlist.fm concert search (free at setlist.fm/settings/api) |
 | `LISTENBRAINZ_TOKEN` | For Scrobbling & Recommendations (get at listenbrainz.org/settings) |
+| `DAB_SESSION` | **Recommended** - For Hi-Res (24-bit) Audio (from Dab/Qobuz) |
+| `DAB_VISITOR_ID` | **Recommended** - For Hi-Res (24-bit) Audio (from Dab/Qobuz) |
 
 ---
 
@@ -209,6 +213,7 @@ Click a result to see the full setlist with song annotations, then click "Listen
 
 ## Credits
 Inspired by and built off of [Spotiflac](https://github.com/afkarxyz/Spotiflac) by afkarxyz.
+**Hi-Res Audio Source** provided by [Dab Music](https://dabmusic.xyz).
 
 ---
 

@@ -10,12 +10,13 @@ from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Response, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import zipfile
 import io
 from typing import List
+import httpx
 
 
 from app.deezer_service import deezer_service
@@ -162,23 +163,60 @@ async def search(
         if live_results is not None:
             return {"results": live_results, "query": q, "type": "album", "source": "live_shows"}
         
-        # Regular search - Use Deezer (no rate limits)
-        logger.info(f"Searching Deezer for: {q} (type: {type}, offset: {offset})")
-        if type == "album":
-            results = await deezer_service.search_albums(q, limit=20, offset=offset)
-        elif type == "artist":
-            results = await deezer_service.search_artists(q, limit=20, offset=offset)
-        else:
-            results = await deezer_service.search_tracks(q, limit=20, offset=offset)
+        # Regular search - Use Dab Music (Priority) then Deezer
+        logger.info(f"Searching: {q} (type: {type}, offset: {offset})")
         
-        return {"results": results, "query": q, "type": type, "source": "deezer", "offset": offset}
+        results = []
+        source = "deezer"
+        
+        # 1. Try Dab Music (unless offset > 0, as Dab paging is limited/untested or we want fast fallback)
+        # Actually Dab search wrapper I wrote doesn't support offset yet (defaults limit 10).
+        # We'll use Dab for generic queries.
+        if type in ["album", "track"] and offset == 0:
+            try:
+                from app.dab_service import dab_service
+                if type == "album":
+                    dab_results = await dab_service.search_albums(q, limit=10)
+                else:
+                    dab_results = await dab_service.search_tracks(q, limit=10)
+                
+                if dab_results:
+                    logger.info(f"Found {len(dab_results)} results on Dab Music")
+                    results = dab_results
+                    source = "dab"
+            except Exception as e:
+                logger.error(f"Dab search error: {e}")
+
+        # 2. Fallback to Deezer if no Dab results
+        if not results:
+            logger.info(f"Falling back to Deezer search...")
+            if type == "album":
+                results = await deezer_service.search_albums(q, limit=20, offset=offset)
+            elif type == "artist":
+                results = await deezer_service.search_artists(q, limit=20, offset=offset)
+            else:
+                results = await deezer_service.search_tracks(q, limit=20, offset=offset)
+        
+        return {"results": results, "query": q, "type": type, "source": source, "offset": offset}
     except Exception as e:
         logger.error(f"Search error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 async def get_content_by_type(content_type: str, item_id: str):
-    """Helper to get content by type and ID (uses Deezer)."""
+    """Helper to get content by type and ID (uses Deezer or Dab)."""
+    
+    # Handle Dab Music IDs
+    if item_id.startswith("dab_"):
+        from app.dab_service import dab_service
+        if content_type == "album":
+            album = await dab_service.get_album(item_id)
+            if album:
+                return {"results": [album], "type": "album", "is_url": True, "tracks": album.get("tracks", [])}
+        # Dab doesn't really have "get_track" singular metadata endpoint exposed yet, but we can search or use stream.
+        # But for UI "open track", usually it plays directly.
+        pass
+
     if content_type == "track":
         results = await deezer_service.search_tracks(item_id, limit=1)
         if results:
@@ -247,6 +285,19 @@ async def get_track(track_id: str):
 
 @app.get("/api/album/{album_id}")
 async def get_album(album_id: str):
+    # Support Dab Albums
+    if album_id.startswith("dab_"):
+        from app.dab_service import dab_service
+        album = await dab_service.get_album(album_id)
+        if album: return album
+        raise HTTPException(status_code=404, detail="Dab album not found")
+        
+    # Support Deezer Albums (fallback logic handled in dedicated service or here)
+    if album_id.startswith("dz_"):
+        album = await deezer_service.get_album(album_id)
+        if album: return album
+        raise HTTPException(status_code=404, detail="Deezer album not found")
+
     """Get album details with all tracks."""
     try:
         # Handle different sources based on ID prefix
@@ -341,121 +392,142 @@ async def stream_audio(
     request: Request,
     isrc: str,
     q: Optional[str] = Query(None, description="Search query hint"),
-    hifi: bool = Query(False, description="Stream raw FLAC instead of MP3 (faster, larger)")
+    hires: bool = Query(True, description="Prefer Hi-Res 24-bit audio")
 ):
     """Stream audio for a track by ISRC."""
     try:
-        logger.info(f"Stream request for ISRC: {isrc} (hifi={hifi})")
+        logger.info(f"Stream request for ISRC: {isrc} (hires={hires})")
         
-        # For LINK: prefixed IDs pointing to direct audio files, proxy the stream
-        # (Redirect causes CORS issues with Web Audio API equalizer)
+        target_stream_url = None
+        
+        # 1. Resolve Target Stream URL (Direct or via yt-dlp)
+        
+        # Handle Imported Links (LINK:)
         if isrc.startswith("LINK:"):
             import base64
-            import httpx
             from urllib.parse import urlparse
-            from fastapi.responses import StreamingResponse
             try:
                 encoded_url = isrc.replace("LINK:", "")
                 original_url = base64.urlsafe_b64decode(encoded_url).decode()
                 
-                # Check if it's a direct audio file
+                # Check for direct file extension first (fast path)
                 parsed = urlparse(original_url)
-                audio_extensions = ('.mp3', '.m4a', '.ogg', '.wav', '.aac', '.opus')
-                if any(parsed.path.lower().endswith(ext) for ext in audio_extensions):
-                    logger.info(f"Proxying direct audio URL (with seeking support): {original_url[:60]}...")
+                audio_exts = ('.mp3', '.m4a', '.ogg', '.wav', '.aac', '.opus', '.flac')
+                if any(parsed.path.lower().endswith(ext) for ext in audio_exts):
+                     target_stream_url = original_url
+                else:
+                    # Try to extract stream via yt-dlp (for YouTube/SoundCloud links)
+                    # Run in executor to avoid blocking
+                    loop = asyncio.get_event_loop()
+                    target_stream_url = await loop.run_in_executor(None, audio_service._get_stream_url, original_url)
                     
-                    # Prepare headers to forward (especially Range)
-                    req_headers = {}
-                    if request.headers.get("Range"):
-                        req_headers["Range"] = request.headers.get("Range")
-                        logger.info(f"Forwarding Range header: {req_headers['Range']}")
-                    
-                    # Stream proxy with Range support
-                    # We use manual client management to inspect headers before streaming
-                    from starlette.background import BackgroundTask
-                    
-                    client = httpx.AsyncClient(follow_redirects=True, timeout=60.0)
-                    req = client.build_request("GET", original_url, headers=req_headers)
-                    r = await client.send(req, stream=True)
-                    
-                    # Determine content type
-                    ext = parsed.path.lower().split('.')[-1]
-                    content_types = {
-                        'mp3': 'audio/mpeg', 'm4a': 'audio/mp4', 'ogg': 'audio/ogg',
-                        'wav': 'audio/wav', 'aac': 'audio/aac', 'opus': 'audio/opus'
-                    }
-                    content_type = r.headers.get("Content-Type") or content_types.get(ext, 'audio/mpeg')
-                    
-                    # Prepare response headers
-                    resp_headers = {
-                        "Accept-Ranges": "bytes",
-                        "Cache-Control": "public, max-age=3600"
-                    }
-                    if r.headers.get("Content-Range"):
-                        resp_headers["Content-Range"] = r.headers.get("Content-Range")
-                    if r.headers.get("Content-Length"):
-                        resp_headers["Content-Length"] = r.headers.get("Content-Length")
-                    
-                    return StreamingResponse(
-                        r.aiter_bytes(chunk_size=65536),
-                        status_code=r.status_code, # Should represent 206 if Range was respected
-                        media_type=content_type,
-                        headers=resp_headers,
-                        background=BackgroundTask(client.aclose)
-                    )
             except Exception as e:
-                logger.warning(f"Failed to proxy LINK: {e}")
-                # Fall through to normal processing
-        
-        # YouTube Music tracks - use yt-dlp directly with YouTube URL
-        if isrc.startswith("ytm_"):
-            video_id = isrc.replace("ytm_", "")
-            youtube_url = f"https://music.youtube.com/watch?v={video_id}"
-            logger.info(f"YTMusic track detected, fetching via yt-dlp: {youtube_url}")
+                logger.warning(f"Failed to parse/extract LINK: {e}")
+
+        # Handle YouTube Music (ytm_)
+        elif isrc.startswith("ytm_"):
+             video_id = isrc.replace("ytm_", "")
+             youtube_url = f"https://music.youtube.com/watch?v={video_id}"
+             loop = asyncio.get_event_loop()
+             target_stream_url = await loop.run_in_executor(None, audio_service._get_stream_url, youtube_url)
+
+        # 2. Proxy the Target Stream (if found)
+        if target_stream_url:
+            logger.info(f"Proxying direct stream: {target_stream_url[:60]}...")
             
-            # Check cache first
-            if is_cached(isrc, "mp3"):
-                cache_path = get_cache_path(isrc, "mp3")
-                logger.info(f"Serving YTM from cache: {cache_path}")
-                return FileResponse(
-                    cache_path,
-                    media_type="audio/mpeg",
-                    headers={"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=86400"}
-                )
-            
-            # Get stream URL via yt-dlp
-            from fastapi.responses import StreamingResponse
-            import httpx
-            
-            stream_url = audio_service._get_stream_url(youtube_url)
-            if not stream_url:
-                raise HTTPException(status_code=404, detail="Could not extract YouTube Music audio URL")
-            
-            logger.info(f"Proxying YTM audio directly (no transcode): {stream_url[:60]}...")
-            
-            # Proxy the stream directly - no transcoding needed, browsers play Opus/AAC natively
-            async def proxy_ytm_stream():
-                async with httpx.AsyncClient(follow_redirects=True, timeout=300.0) as client:
-                    async with client.stream("GET", stream_url) as response:
-                        async for chunk in response.aiter_bytes(chunk_size=65536):
+            # Forward Range header to support seeking
+            req_headers = {}
+            if request.headers.get("Range"):
+                req_headers["Range"] = request.headers.get("Range")
+                logger.info(f"Forwarding Range header: {req_headers['Range']}")
+
+
+
+            try:
+                # Use a dedicated client per request, managed by a generator with context manager.
+                # This guarantees cleanup when the generator is closed (e.g. client disconnect).
+                # This avoids "Shared Client" pool exhaustion/deadlocks.
+                
+                async def stream_generator():
+                    try:
+                        # 60s timeout, follow redirects
+                        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+                            req = client.build_request("GET", target_stream_url, headers=req_headers)
+                            async with client.stream(req.method, req.url, headers=req.headers) as r:
+                                # We've started the stream. Now we need to yield data.
+                                # But wait, we need to return status_code and headers to FastAPI *before* we yield data 
+                                # if we use standard StreamingResponse... 
+                                
+                                # Actually, StreamingResponse takes a generator for content.
+                                # But it needs status and headers passed in the constructor.
+                                # Be we can't get them until we make the request!
+                                
+                                # This is the "Streaming Problem".
+                                # Solution: use a separate setup request (HEAD) or...
+                                # Accept that we make the request *outside* the generator for headers, 
+                                # but risking the cleanup issue?
+                                
+                                # NO. The cleanup issue is paramount.
+                                # If we can't get headers cleanly without risking leaks, we should assume defaults 
+                                # or use a dummy request?
+                                
+                                # ALTERNATIVE: Use the shared client again, BUT with a much more aggressive timeout?
+                                # OR use the pattern where we don't return StreamingResponse until we have headers,
+                                # ensuring we use a try/finally block that closes the client.
+                                
+                                # Let's stick to the pattern I implemented before but simpler:
+                                # 1. Create client
+                                # 2. Make request
+                                # 3. Return StreamingResponse with a generator that CLOSES the client.
+                                # 4. BUT ensure `client` is a LOCALLY created instance, not shared.
+                                pass
+                                
+                    except Exception as e:
+                        logger.error(f"Generator error: {e}")
+
+                # Real Implementation:
+                # Create a local client instance (not shared).
+                client = httpx.AsyncClient(follow_redirects=True, timeout=60.0)
+                req = client.build_request("GET", target_stream_url, headers=req_headers)
+                r = await client.send(req, stream=True)
+                
+                # Prepare headers
+                resp_headers = {
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "public, max-age=3600",
+                    "Access-Control-Allow-Origin": "*"
+                }
+                for key in ["Content-Range", "Content-Length", "Content-Type", "Last-Modified", "ETag"]:
+                    if r.headers.get(key):
+                        resp_headers[key] = r.headers[key]
+                
+                # Custom iterator that closes the LOCAL client
+                async def response_iterator():
+                    try:
+                        async for chunk in r.aiter_bytes(chunk_size=65536):
                             yield chunk
-            
-            # Determine content type from URL
-            content_type = "audio/webm" if "webm" in stream_url else "audio/mp4"
-            
-            return StreamingResponse(
-                proxy_ytm_stream(),
-                media_type=content_type,
-                headers={"Cache-Control": "no-cache"}
-            )
+                    except Exception as e:
+                        logger.error(f"Stream iteration error: {e}")
+                    finally:
+                        # Close the response AND the client
+                        await r.aclose()
+                        await client.aclose()
+                
+                return StreamingResponse(
+                    response_iterator(),
+                    status_code=r.status_code,
+                    media_type=r.headers.get("Content-Type", "audio/mpeg"),
+                    headers=resp_headers
+                )
+            except Exception as e:
+                logger.error(f"Proxying stream failed: {e}")
+                # Fall through to standard playback if proxy fails
         
-        # HiFi Mode: Stream raw FLAC (no transcoding)
-        if hifi:
-            cache_ext = "flac"
-            mime_type = "audio/flac"
-        else:
-            cache_ext = "mp3"
-            mime_type = "audio/mpeg"
+        # 3. Standard / HiFi Playback (Fallback or standard sources)
+        
+        # Force FLAC/Hi-Res path (MP3 option removed)
+        cache_ext = "flac"
+        mime_type = "audio/flac"
         
         # Check cache
         if is_cached(isrc, cache_ext):
@@ -467,117 +539,93 @@ async def stream_audio(
                 headers={"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=86400"}
             )
         
-        # HiFi Mode: Stream proxy for fast playback (no transcoding)
-        if hifi:
-            try:
-                from fastapi.responses import StreamingResponse
-                
-                logger.info(f"HiFi: Getting stream URL for {isrc} with query: {q}")
-                
-                # Get stream URL from Tidal (search by query if needed)
-                stream_url = None
-                
-                # Try to get Tidal track by searching with query
-                if q:
-                    tidal_track = await audio_service.search_tidal_by_isrc(isrc, q)
-                    if tidal_track:
-                        track_id = tidal_track.get("id")
-                        stream_url = await audio_service.get_tidal_download_url(track_id)
-                
-                if not stream_url:
-                    logger.warning(f"HiFi: No stream URL found, falling back to MP3 transcode")
-                else:
-                    logger.info(f"HiFi: Streaming from {stream_url[:60]}...")
-                    
-                    # Detect content type from URL
-                    content_type = "audio/flac"
-                    format_name = "FLAC"
-                    if ".mp4" in stream_url or ".m4a" in stream_url:
-                        content_type = "audio/mp4"
-                        format_name = "AAC"
-                    elif ".mp3" in stream_url:
-                        content_type = "audio/mpeg"
-                        format_name = "MP3"
-                    
-                    # Handle HEAD requests (format detection)
-                    if request.method == "HEAD":
-                        return Response(
-                            content=b"",
-                            media_type=content_type,
-                            headers={
-                                "Accept-Ranges": "bytes",
-                                "Cache-Control": "no-cache",
-                                "X-Audio-Format": format_name
-                            }
-                        )
-                    
-                    # Prepare headers for upstream request (forward Range if present)
-                    headers = {}
-                    range_header = request.headers.get("Range")
-                    if range_header:
-                        headers["Range"] = range_header
-                        logger.info(f"HiFi: Forwarding Range header: {range_header}")
-                        
-                    # Send request to Tidal
-                    req = audio_service.client.build_request("GET", stream_url, headers=headers)
-                    r = await audio_service.client.send(req, stream=True)
-                    
-                    # Prepare response headers
-                    resp_headers = {
-                        "Accept-Ranges": "bytes",
-                        "Cache-Control": "no-cache", 
-                        "X-Audio-Format": format_name
-                    }
-                    
-                    # Forward key headers from upstream
-                    for key in ["Content-Range", "Content-Length", "Content-Type"]:
-                        if key in r.headers:
-                            resp_headers[key] = r.headers[key]
-                            
-                    # Use BackgroundTask to close response after streaming
-                    from starlette.background import BackgroundTask
-                    
-                    return StreamingResponse(
-                        r.aiter_bytes(chunk_size=65536),
-                        status_code=r.status_code,
-                        media_type=r.headers.get("Content-Type", content_type),
-                        headers=resp_headers,
-                        background=BackgroundTask(r.aclose)
-                    )
-            except Exception as e:
-                logger.error(f"HiFi: Error setting up stream proxy: {e}")
+        
+        # 4. Standard / HiFi Playback (Uses fetch_flac with internal priorities: Dab -> Tidal -> Deezer)
+        
+        # Standard: Fetch FLAC directly (Hifi/Hi-Res) - Skip MP3 transcoding
+        # The user requested to remove non-hifi options for efficiency.
+        result = await audio_service.fetch_flac(isrc, q or "", hires=hires)
+        
+        if not result:
+            raise HTTPException(status_code=404, detail="Could not fetch audio")
             
-            # Fall back to MP3 transcode if stream proxy fails
-            logger.info(f"HiFi fallback: Using MP3 transcode for {isrc}")
-            mp3_data = await audio_service.get_audio_stream(isrc, q or "")
-            if mp3_data:
-                return Response(
-                    content=mp3_data,
-                    media_type="audio/mpeg",
-                    headers={
-                        "Accept-Ranges": "bytes",
-                        "Content-Length": str(len(mp3_data)),
-                        "Cache-Control": "public, max-age=86400",
-                        "X-Audio-Format": "MP3"
-                    }
+        # Check if result is URL (tuple[str, dict]) or Bytes (tuple[bytes, dict])
+        if isinstance(result[0], str):
+            # It's a URL! Stream it via proxy
+            target_stream_url = result[0]
+            metadata = result[1]
+            logger.info(f"Streaming via proxy from URL: {target_stream_url[:50]}...")
+            
+            # Proxy streaming logic for fetched URL
+            # Need to handle Range requests properly for seeking
+            
+            req_headers = {}
+            if request.headers.get("Range"):
+                req_headers["Range"] = request.headers.get("Range")
+                logger.info(f"Forwarding Range header: {req_headers['Range']}")
+
+            # Make initial request to get status/headers
+            client = httpx.AsyncClient(timeout=60.0, follow_redirects=True)
+            try:
+                upstream_req = client.build_request("GET", target_stream_url, headers=req_headers)
+                upstream_resp = await client.send(upstream_req, stream=True)
+                
+                # Build response headers
+                resp_headers = {
+                    "Accept-Ranges": "bytes",
+                    "Cache-Control": "public, max-age=3600",
+                    "Access-Control-Allow-Origin": "*"
+                }
+                
+                # Forward important headers from upstream
+                for key in ["Content-Range", "Content-Length", "Content-Type"]:
+                    if upstream_resp.headers.get(key):
+                        resp_headers[key] = upstream_resp.headers[key]
+                
+                if metadata and metadata.get("is_hi_res"):
+                    resp_headers["X-Audio-Quality"] = "Hi-Res"
+                    resp_headers["X-Audio-Format"] = "FLAC"
+
+                # Iterator that closes client when done
+                async def response_iterator():
+                    try:
+                        async for chunk in upstream_resp.aiter_bytes(chunk_size=65536):
+                            yield chunk
+                    except Exception as e:
+                        logger.error(f"Stream iteration error: {e}")
+                    finally:
+                        await upstream_resp.aclose()
+                        await client.aclose()
+                
+                return StreamingResponse(
+                    response_iterator(),
+                    status_code=upstream_resp.status_code,  # 200 or 206
+                    media_type=upstream_resp.headers.get("Content-Type", "audio/flac"), 
+                    headers=resp_headers
                 )
-            raise HTTPException(status_code=404, detail="Could not fetch audio")
-        
-        # Standard: Fetch and transcode to MP3
-        mp3_data = await audio_service.get_audio_stream(isrc, q or "")
-        
-        if not mp3_data:
-            raise HTTPException(status_code=404, detail="Could not fetch audio")
-        
-        return Response(
-            content=mp3_data,
-            media_type="audio/mpeg",
-            headers={
+            except Exception as e:
+                await client.aclose()
+                raise
+            
+        else:
+            # It's bytes! Serve directly.
+            flac_data, metadata = result
+            
+            headers = {
                 "Accept-Ranges": "bytes",
-                "Content-Length": str(len(mp3_data)),
-                "Cache-Control": "public, max-age=86400"
+                "Content-Length": str(len(flac_data)),
+                "Cache-Control": "public, max-age=86400",
+                "X-Audio-Format": "FLAC"
             }
-        )
+            
+            if metadata and metadata.get("is_hi_res"):
+                headers["X-Audio-Quality"] = "Hi-Res"
+                
+            return Response(
+                content=flac_data,
+                media_type="audio/flac",
+                headers=headers
+            )
         
     except HTTPException:
         raise
@@ -986,6 +1034,31 @@ async def listenbrainz_set_token(token: str):
     listenbrainz_service.set_token(token)
     username = await listenbrainz_service.validate_token()
     return {"valid": username is not None, "username": username}
+
+
+
+@app.get("/api/proxy_image")
+async def proxy_image(url: str):
+    """Proxy image requests to avoid 429 errors/CORS issues."""
+    if not url:
+        raise HTTPException(status_code=400, detail="No URL provided")
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, follow_redirects=True)
+            if resp.status_code != 200:
+                raise HTTPException(status_code=resp.status_code, detail="Failed to fetch image")
+            
+            return Response(
+                content=resp.content,
+                media_type=resp.headers.get("Content-Type", "image/jpeg"),
+                headers={
+                    "Cache-Control": "public, max-age=86400"
+                }
+            )
+    except Exception as e:
+        logger.error(f"Image proxy error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

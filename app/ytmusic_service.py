@@ -121,7 +121,14 @@ class YTMusicService:
             return "/static/icon.svg"
         # Sort by width descending and get the largest
         sorted_thumbs = sorted(thumbnails, key=lambda x: x.get("width", 0), reverse=True)
-        return sorted_thumbs[0].get("url", "/static/icon.svg")
+        url = sorted_thumbs[0].get("url", "/static/icon.svg")
+        
+        # Proxy googleusercontent images to avoid 429
+        if "googleusercontent.com" in url or "ggpht.com" in url:
+            import urllib.parse
+            return f"/api/proxy_image?url={urllib.parse.quote(url)}"
+        
+        return url
     
     def _parse_duration(self, duration) -> int:
         """Parse duration string to milliseconds."""

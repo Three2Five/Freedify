@@ -8,8 +8,14 @@ import subprocess
 import asyncio
 import httpx
 import base64
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Union
 import logging
+import json
+import tempfile
+from mutagen.flac import FLAC, Picture
+from mutagen.id3 import ID3, TIT2, TPE1, TALB, TRCK, TDRC, TCON, APIC, COMM
+from mutagen.mp3 import MP3, EasyMP3
+from mutagen.mp4 import MP4, MP4Cover
 
 import re
 from app.cache import is_cached, get_cached_file, cache_file, get_cache_path
@@ -32,15 +38,6 @@ if os.name == 'nt' and FFMPEG_PATH == "ffmpeg":
                 break
 
 # List of Tidal API endpoints with fallback (fastest/most reliable first)
-import json
-import tempfile
-from mutagen.flac import FLAC, Picture
-from mutagen.id3 import ID3, TIT2, TPE1, TALB, TRCK, TDRC, TCON, APIC, COMM
-from mutagen.mp3 import MP3, EasyMP3
-from mutagen.mp4 import MP4, MP4Cover
-
-# List of Tidal API endpoints with fallback (fastest/most reliable first)
-# This will be updated dynamically
 TIDAL_APIS = [
     "https://triton.squid.wtf",  # From Monochrome - fast primary
     "https://hifi.401658.xyz",
@@ -247,65 +244,43 @@ class AudioService:
             logger.info(f"Direct audio URL detected, bypassing yt-dlp: {url[:60]}...")
             return url
         
+        
+        # Check cache
+        import time
+        now = time.time()
+        if url in self._stream_url_cache:
+            cached_url, expiry = self._stream_url_cache[url]
+            if now < expiry:
+                logger.info("Stream URL cache hit")
+                return cached_url
+            else:
+                del self._stream_url_cache[url]
+        
         # Use yt-dlp for page URLs (YouTube, Bandcamp, etc.)
         info = self._extract_info_safe(url)
         if not info: return None
         if 'entries' in info: info = info['entries'][0]
-        return info.get('url')
+        
+        stream_url = info.get('url')
+        if stream_url:
+            # Cache for 1 hour (Google URLs usually expire in ~4-6 hours)
+            self._stream_url_cache[url] = (stream_url, now + 3600)
+            
+        return stream_url
 
-    def transcode_url_to_mp3(self, stream_url: str, bitrate: str = BITRATE) -> Optional[bytes]:
-        """Transcode a direct stream URL to MP3."""
-        try:
-            logger.info(f"Transcoding URL to MP3: {stream_url[:50]}...")
-            process = subprocess.Popen(
-                [
-                    FFMPEG_PATH,
-                    "-i", stream_url,
-                    "-vn",
-                    "-acodec", "libmp3lame",
-                    "-b:a", bitrate,
-                    "-f", "mp3",
-                    "pipe:1"
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-            mp3_data, stderr = process.communicate()
-            
-            if process.returncode != 0:
-                logger.error(f"FFmpeg URL transcode error: {stderr.decode()[:500]}")
-                return None
-            return mp3_data
-        except Exception as e:
-            logger.error(f"URL transcode error: {e}")
-            return None
 
-    async def get_audio_from_url(self, url: str) -> Optional[bytes]:
-        """Get MP3 audio from a URL using yt-dlp (for YouTube, YTMusic, etc.).
-        Returns transcoded MP3 bytes or None on failure.
-        """
-        try:
-            logger.info(f"Fetching audio from URL via yt-dlp: {url[:60]}...")
-            
-            # Extract best audio stream URL using yt-dlp
-            stream_url = self._get_stream_url(url)
-            if not stream_url:
-                logger.error(f"Could not extract stream URL from: {url}")
-                return None
-            
-            logger.info(f"Got stream URL, transcoding to MP3...")
-            
-            # Transcode to MP3
-            mp3_data = self.transcode_url_to_mp3(stream_url)
-            return mp3_data
-            
-        except Exception as e:
-            logger.error(f"get_audio_from_url error: {e}")
-            return None
+
+
+    
+    # Simple in-memory cache for resolved stream URLs (to speed up seeking)
+    _stream_url_cache = {}  # {url: (stream_url, expire_time)}
     
     def __init__(self):
         # Enable redirect following and increase timeout
-        self.client = httpx.AsyncClient(timeout=120.0, follow_redirects=True)
+        # Using a shared client with a connection pool to avoid socket exhaustion
+        limits = httpx.Limits(max_keepalive_connections=50, max_connections=100)
+        self.client = httpx.AsyncClient(timeout=60.0, follow_redirects=True, limits=limits)
+        
         self.tidal_token: Optional[str] = None
         self.working_api: Optional[str] = None  # Cache the last working API
     
@@ -600,104 +575,188 @@ class AudioService:
         except Exception as e:
             logger.error(f"Deezer download URL error: {e}")
             return None
+
+    async def fetch_tidal_metadata(self, track: Dict) -> Dict:
+        """Extract metadata from Tidal track object."""
+        try:
+            album = track.get("album", {})
+            artist = track.get("artist", {})
+            if not artist and track.get("artists"):
+                artist = track.get("artists")[0]
+                
+            cover_uuid = album.get("cover")
+            album_art_data = None
+            if cover_uuid:
+                 album_art_data = await self._fetch_tidal_cover(cover_uuid)
+                 
+            return {
+                "title": track.get("title"),
+                "artist": artist.get("name"),
+                "artists": artist.get("name"), # For embed_metadata
+                "album": album.get("title"),
+                "year": track.get("releaseDate", "")[:4],
+                "track_number": track.get("trackNumber"),
+                "album_art_data": album_art_data,
+                "album_art_url": None
+            }
+        except Exception as e:
+            logger.error(f"Metadata extraction error: {e}")
+            return {}
     
-    async def fetch_flac(self, isrc: str, query: str = "") -> Optional[tuple[bytes, Dict]]:
+    async def fetch_flac(self, isrc: str, query: str = "", hires: bool = True) -> Optional[Union[tuple[bytes, Dict], tuple[str, Dict]]]:
         """Fetch FLAC audio and metadata from Tidal or Deezer (with fallback)."""
         
-        # Handle Deezer track IDs directly (dz_XXXXX format)
+        deezer_info = None  # Cache for potential metadata use
+        
+        # Handle Deezer track IDs (dz_XXXXX format) - extract ISRC first
         if isrc.startswith("dz_"):
             deezer_track_id = isrc.replace("dz_", "")
             logger.info(f"Deezer track ID detected: {deezer_track_id}")
             
             try:
-                # Fetch track info directly by Deezer ID
+                # Fetch track info from Deezer public API to get ISRC
                 response = await self.client.get(
                     f"https://api.deezer.com/track/{deezer_track_id}"
                 )
                 if response.status_code == 200:
                     deezer_info = response.json()
                     if "error" not in deezer_info:
-                        download_url = await self.get_deezer_download_url(int(deezer_track_id))
-                        
-                        if download_url:
-                            logger.info(f"Downloading from Deezer (direct ID)...")
-                            dl_response = await self.client.get(download_url, timeout=180.0)
-                            if dl_response.status_code == 200:
-                                logger.info(f"Downloaded {len(dl_response.content) / 1024 / 1024:.2f} MB from Deezer")
-                                
-                                meta = {
-                                    "title": deezer_info.get("title"),
-                                    "artists": [a["name"] for a in deezer_info.get("contributors", [])] or [deezer_info.get("artist", {}).get("name")],
-                                    "album": deezer_info.get("album", {}).get("title"),
-                                    "year": deezer_info.get("release_date"),
-                                    "track_number": deezer_info.get("track_position"),
-                                }
-                                cover_url = deezer_info.get("album", {}).get("cover_xl")
-                                if cover_url:
-                                    try:
-                                        cover_resp = await self.client.get(cover_url)
-                                        if cover_resp.status_code == 200:
-                                            meta["album_art_data"] = cover_resp.content
-                                    except: pass
-                                
-                                return (dl_response.content, meta)
+                        extracted_isrc = deezer_info.get("isrc")
+                        if extracted_isrc:
+                            logger.info(f"Extracted ISRC from Deezer: {extracted_isrc}")
+                            isrc = extracted_isrc  # Use real ISRC for Tidal lookup
+                            query = query or f"{deezer_info.get('title', '')} {deezer_info.get('artist', {}).get('name', '')}"
+                        else:
+                            logger.warning("No ISRC in Deezer track - will try Deezer download directly")
             except Exception as e:
-                logger.error(f"Deezer direct ID fetch error: {e}")
-            
-            logger.error(f"Could not fetch audio for Deezer ID: {isrc}")
-            return None
+                logger.error(f"Deezer track info fetch error: {e}")
         
-        # Try Tidal first for regular ISRCs
-        logger.info(f"Trying Tidal for ISRC: {isrc}")
-        tidal_track = await self.search_tidal_by_isrc(isrc, query)
         
-        if tidal_track:
-            track_id = tidal_track.get("id")
-            download_url = await self.get_tidal_download_url(track_id)
+        # 0. Try Dab Music (Qobuz Hi-Res Proxy) - New! Priority #1
+        try:
+            from app.dab_service import dab_service
             
-            if download_url:
-                logger.info(f"Downloading from Tidal: {download_url[:80]}...")
-                try:
-                    response = await self.client.get(download_url, timeout=180.0)
-                    if response.status_code == 200:
-                        content_type = response.headers.get("content-type", "")
-                        size_mb = len(response.content) / 1024 / 1024
-                        logger.info(f"Downloaded {size_mb:.2f} MB from Tidal")
-                        
-                        # Extract Metadata
-                        meta = {
-                            "title": tidal_track.get("title"),
-                            "artists": [a["name"] for a in tidal_track.get("artists", [])],
-                            "album": tidal_track.get("album", {}).get("title"),
-                            "year": tidal_track.get("album", {}).get("releaseDate"),
-                            "track_number": tidal_track.get("trackNumber"),
+            dab_id = None
+            dab_track = None  # Initialize to avoid UnboundLocalError
+            
+            if isrc.startswith("dab_"):
+                dab_id = isrc
+            else:
+                 # Search prioritization:
+                 # Prefer standard query (Artist + Title) because ISRC support on Dab is flaky.
+                 dab_query = query
+                 if not dab_query and isrc and not isrc.startswith("dz_"):
+                      dab_query = f"isrc:{isrc}"
+                 
+                 if dab_query:
+                     dab_tracks = await dab_service.search_tracks(dab_query, limit=1)
+                     if dab_tracks:
+                         dab_track = dab_tracks[0]
+                         dab_id = dab_track.get('id')
+                         
+                         # Optional: Verify title match if using query?
+                         # For now assume top result is correct as Dab/Qobuz search is usually okay for metadata.
+            
+            if dab_id:
+                # Select quality
+                quality = "27" if hires else "7"
+                stream_url = await dab_service.get_stream_url(dab_id, quality=quality)
+                
+                if stream_url:
+                    logger.info(f"Dab Stream URL found: {stream_url[:40]}...")
+                    
+                    # Metadata gathering
+                    # Use Dab metadata if available, otherwise fallback to query string
+                    if dab_track:
+                        metadata = {
+                            "title": dab_track.get("title"),
+                            "artist": dab_track.get("artist"),
+                            "album": dab_track.get("albumTitle"),
+                            "year": dab_track.get("releaseDate", "")[:4] if dab_track.get("releaseDate") else "",
+                            "album_art_url": dab_track.get("albumCover"),
+                            "album_art_data": None
                         }
-                        cover_uuid = tidal_track.get("album", {}).get("cover")
-                        if cover_uuid:
-                            meta["album_art_data"] = await self._fetch_tidal_cover(cover_uuid)
-                            
-                        return (response.content, meta)
+                        # Ensure artist/album are strings
+                        if isinstance(metadata["artist"], dict): metadata["artist"] = metadata["artist"].get("name")
+                        if isinstance(metadata["album"], dict): metadata["album"] = metadata["album"].get("title")
                     else:
-                        logger.warning(f"Download failed with status {response.status_code}")
-                except Exception as e:
-                    logger.error(f"Tidal download error: {e}")
+                        # Fallback: extract from query string (format: "Title Artist")
+                        parts = query.split(" ") if query else []
+                        metadata = {
+                            "title": query or "Unknown",
+                            "artist": "",
+                            "album": "",
+                            "year": "",
+                            "album_art_url": None,
+                            "album_art_data": None
+                        }
+
+                    metadata["is_hi_res"] = True
+                    return (stream_url, metadata)
+        except Exception as e:
+            logger.error(f"Dab Music fetch error: {e}")
+
+        # 1. Try Tidal (Primary Source)
+        if not isrc.startswith("dz_"):  # Only if we have a real ISRC
+            logger.info(f"Trying Tidal APIs for ISRC: {isrc}")
+            tidal_track = await self.search_tidal_by_isrc(isrc, query)
+            
+            if tidal_track:
+                track_id = tidal_track.get("id")
+                download_url = await self.get_tidal_download_url(track_id)
+                
+                if download_url:
+                    logger.info(f"Downloading from Tidal: {download_url[:80]}...")
+                    try:
+                        response = await self.client.get(download_url, timeout=180.0)
+                        if response.status_code == 200:
+                            size_mb = len(response.content) / 1024 / 1024
+                            logger.info(f"Downloaded {size_mb:.2f} MB from Tidal")
+                            
+                            meta = {
+                                "title": tidal_track.get("title"),
+                                "artists": [a["name"] for a in tidal_track.get("artists", [])],
+                                "album": tidal_track.get("album", {}).get("title"),
+                                "year": tidal_track.get("album", {}).get("releaseDate"),
+                                "track_number": tidal_track.get("trackNumber"),
+                            }
+                            cover_uuid = tidal_track.get("album", {}).get("cover")
+                            if cover_uuid:
+                                meta["album_art_data"] = await self._fetch_tidal_cover(cover_uuid)
+                                
+                            return (response.content, meta)
+                    except Exception as e:
+                        logger.error(f"Tidal download error: {e}")
+            else:
+                logger.warning(f"Tidal search returned no results for: {isrc}")
         
-        # Fallback to Deezer
-        logger.info(f"Trying Deezer for ISRC: {isrc}")
-        deezer_info = await self.get_deezer_track_info(isrc)
+        # Fallback to Deezer FLAC download (deezmate API)
+        logger.info(f"Falling back to Deezer for: {isrc}")
         
-        if deezer_info:
+        # If we have cached deezer_info from above, use it; otherwise fetch
+        if not deezer_info and isrc.startswith("dz_"):
+            deezer_track_id = isrc.replace("dz_", "")
+            try:
+                response = await self.client.get(f"https://api.deezer.com/track/{deezer_track_id}")
+                if response.status_code == 200:
+                    deezer_info = response.json()
+            except:
+                pass
+        elif not deezer_info:
+            # Lookup by ISRC
+            deezer_info = await self.get_deezer_track_info(isrc)
+        
+        if deezer_info and "error" not in deezer_info:
             deezer_id = deezer_info.get("id")
             download_url = await self.get_deezer_download_url(deezer_id)
             
             if download_url:
-                logger.info(f"Downloading from Deezer...")
+                logger.info(f"Downloading from Deezer (deezmate)...")
                 try:
                     response = await self.client.get(download_url, timeout=180.0)
                     if response.status_code == 200:
                         logger.info(f"Downloaded {len(response.content) / 1024 / 1024:.2f} MB from Deezer")
                         
-                        # Extract Metadata
                         meta = {
                             "title": deezer_info.get("title"),
                             "artists": [a["name"] for a in deezer_info.get("contributors", [])] or [deezer_info.get("artist", {}).get("name")],
@@ -712,12 +771,12 @@ class AudioService:
                                 if cover_resp.status_code == 200:
                                     meta["album_art_data"] = cover_resp.content
                             except: pass
-
+                        
                         return (response.content, meta)
                 except Exception as e:
                     logger.error(f"Deezer download error: {e}")
         
-        logger.error(f"Could not fetch audio for ISRC: {isrc}")
+        logger.error(f"Could not fetch audio for: {isrc}")
         return None
     
     def transcode_to_mp3(self, flac_data: bytes, bitrate: str = BITRATE) -> Optional[bytes]:
@@ -765,29 +824,7 @@ class AudioService:
             if cached_data:
                 return cached_data
                 
-        # Handle Imported Links
-        if isrc.startswith("LINK:"):
-            try:
-                encoded_url = isrc.replace("LINK:", "")
-                original_url = base64.urlsafe_b64decode(encoded_url).decode()
-                
-                logger.info(f"Processing imported link: {original_url}")
-                loop = asyncio.get_event_loop()
-                
-                # Get stream URL
-                stream_url = await loop.run_in_executor(None, self._get_stream_url, original_url)
-                if not stream_url: return None
-                
-                # Transcode
-                mp3_data = await loop.run_in_executor(None, self.transcode_url_to_mp3, stream_url)
-                
-                if mp3_data:
-                    await cache_file(isrc, mp3_data, "mp3")
-                    return mp3_data
-                return None
-            except Exception as e:
-                logger.error(f"Link handling error: {e}")
-                return None
+
         
         # Fetch and transcode
         logger.info(f"Cache miss for {isrc}, fetching...")
@@ -808,143 +845,7 @@ class AudioService:
         
         return mp3_data
     
-    async def stream_audio_generator(self, isrc: str, query: str = ""):
-        """
-        Async generator that streams MP3 data as FFmpeg transcodes.
-        Yields chunks incrementally for faster time-to-first-byte.
-        Also caches the complete file after streaming finishes.
-        """
-        # Check cache first - if cached, yield entire file at once
-        if is_cached(isrc, "mp3"):
-            logger.info(f"Cache hit for streaming {isrc}")
-            cached_data = await get_cached_file(isrc, "mp3")
-            if cached_data:
-                yield cached_data
-                return
-        
-        # For imported links
-        if isrc.startswith("LINK:"):
-            try:
-                encoded_url = isrc.replace("LINK:", "")
-                original_url = base64.urlsafe_b64decode(encoded_url).decode()
-                
-                logger.info(f"Streaming imported link: {original_url}")
-                loop = asyncio.get_event_loop()
-                
-                # Get stream URL
-                stream_url = await loop.run_in_executor(None, self._get_stream_url, original_url)
-                if not stream_url:
-                    return
-                
-                # Stream transcode and yield chunks
-                chunks = []
-                async for chunk in self._stream_transcode_url(stream_url):
-                    chunks.append(chunk)
-                    yield chunk
-                
-                # Cache complete file after stream completes
-                if chunks:
-                    complete_data = b"".join(chunks)
-                    await cache_file(isrc, complete_data, "mp3")
-                return
-            except Exception as e:
-                logger.error(f"Streaming link error: {e}")
-                return
-        
-        # Fetch FLAC first (this part still needs to complete)
-        logger.info(f"Streaming transcode for {isrc}")
-        result = await self.fetch_flac(isrc, query)
-        
-        if not result:
-            return
-            
-        flac_data, metadata = result
-        
-        # Stream transcode and yield chunks
-        chunks = []
-        async for chunk in self._stream_transcode_flac(flac_data):
-            chunks.append(chunk)
-            yield chunk
-        
-        # Cache complete file after stream completes
-        if chunks:
-            complete_data = b"".join(chunks)
-            await cache_file(isrc, complete_data, "mp3")
-    
-    async def _stream_transcode_flac(self, flac_data: bytes, bitrate: str = BITRATE):
-        """Stream transcode FLAC data to MP3, yielding chunks."""
-        try:
-            process = await asyncio.create_subprocess_exec(
-                FFMPEG_PATH,
-                "-i", "pipe:0",
-                "-vn",
-                "-acodec", "libmp3lame",
-                "-b:a", bitrate,
-                "-f", "mp3",
-                "pipe:1",
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            # Write input in background task - write in chunks to avoid blocking
-            async def write_input():
-                try:
-                    chunk_size = 1024 * 1024  # 1MB chunks for writing
-                    for i in range(0, len(flac_data), chunk_size):
-                        if process.stdin.is_closing():
-                            break
-                        process.stdin.write(flac_data[i:i+chunk_size])
-                        await process.stdin.drain()
-                    process.stdin.close()
-                    await process.stdin.wait_closed()
-                except Exception as e:
-                    logger.error(f"Error writing to FFmpeg stdin: {e}")
-            
-            write_task = asyncio.create_task(write_input())
-            
-            # Read and yield output chunks
-            chunk_size = 64 * 1024  # 64KB chunks for output
-            try:
-                while True:
-                    chunk = await process.stdout.read(chunk_size)
-                    if not chunk:
-                        break
-                    yield chunk
-            finally:
-                await write_task  # Ensure write completes
-                await process.wait()
-            
-        except Exception as e:
-            logger.error(f"Streaming transcode error: {e}")
-    
-    async def _stream_transcode_url(self, stream_url: str, bitrate: str = BITRATE):
-        """Stream transcode from URL to MP3, yielding chunks."""
-        try:
-            process = await asyncio.create_subprocess_exec(
-                FFMPEG_PATH,
-                "-i", stream_url,
-                "-vn",
-                "-acodec", "libmp3lame",
-                "-b:a", bitrate,
-                "-f", "mp3",
-                "pipe:1",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            # Read and yield output chunks
-            chunk_size = 64 * 1024  # 64KB chunks
-            while True:
-                chunk = await process.stdout.read(chunk_size)
-                if not chunk:
-                    break
-                yield chunk
-            
-            await process.wait()
-            
-        except Exception as e:
-            logger.error(f"Streaming URL transcode error: {e}")
+
 
     # Format configurations for FFmpeg
     FORMAT_CONFIG = {
@@ -973,10 +874,20 @@ class AudioService:
             "mime": "audio/wav",
             "args": ["-acodec", "pcm_s16le", "-f", "wav"]
         },
+        "wav_24": {
+            "ext": ".wav",
+            "mime": "audio/wav",
+            "args": ["-acodec", "pcm_s24le", "-f", "wav"]
+        },
         "alac": {
             "ext": ".m4a",
             "mime": "audio/mp4",
             "args": ["-acodec", "alac", "-f", "ipod"]
+        },
+        "aiff_24": {
+            "ext": ".aiff",
+            "mime": "audio/aiff",
+            "args": ["-acodec", "pcm_s24be", "-f", "aiff"]
         }
     }
     
@@ -1088,6 +999,11 @@ class AudioService:
     async def close(self):
         """Close the HTTP client."""
         await self.client.aclose()
+        # Close Dab Service
+        try:
+            from app.dab_service import dab_service
+            await dab_service.close()
+        except: pass
 
 
 # Singleton instance

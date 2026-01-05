@@ -13,7 +13,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@400;700;900&family=Permanent+Marker&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?v=2">
+    <link rel="stylesheet" href="/static/styles.css?t=1736053100">
     <!-- Google API for Drive sync -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://apis.google.com/js/api.js" async defer></script>
@@ -47,7 +47,7 @@
         </div>
     </div>
 
-    <div class="app">
+    <div class="app-container">
         <!-- Header -->
         <header class="header">
             <h1 class="logo"><span class="brand-text">Freedify</span></h1>
@@ -91,6 +91,9 @@
                 <button class="type-btn" data-type="artist">Artists</button>
                 <button class="type-btn" data-type="podcast">Podcasts</button>
                 <button id="search-more-btn" class="type-btn more-btn">⋮ More</button>
+                <button id="sort-filter-btn" class="type-btn sort-btn" title="Sort by Year" style="display: none;">
+                    <span class="sort-icon">↓</span> Newest
+                </button>
             </div>
             
             <!-- Search More Menu -->
@@ -127,9 +130,11 @@
                     <label>Select Format:</label>
                     <select id="download-format">
                         <option value="mp3">MP3 (320kbps)</option>
-                        <option value="flac">FLAC (Lossless)</option>
-                        <option value="aiff">AIFF (DJ Friendly)</option>
-                        <option value="wav">WAV (Lossless)</option>
+                        <option value="flac">FLAC (Lossless / Hi-Res)</option>
+                        <option value="aiff">AIFF (16-bit)</option>
+                        <option value="aiff_24">AIFF (24-bit)</option>
+                        <option value="wav">WAV (16-bit)</option>
+                        <option value="wav_24">WAV (24-bit)</option>
                         <option value="alac">ALAC (Apple Lossless)</option>
                     </select>
                 </div>
@@ -182,10 +187,81 @@
                     <button id="queue-close" class="queue-close-btn" title="Close Queue">×</button>
                 </div>
             </div>
+            
+            <!-- Crossfade Toggle -->
+            <div class="crossfade-toggle">
+                <span class="crossfade-icon">◐</span>
+                <div class="crossfade-info">
+                    <span class="crossfade-title">1s Crossfade</span>
+                    <span class="crossfade-desc">Smooth transition between tracks</span>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="crossfade-checkbox">
+                    <span class="toggle-slider"></span>
+                </label>
+            </div>
+            
             <div id="queue-container" class="queue-container">
                 <!-- Queue items will be inserted here -->
             </div>
         </section>
+
+        <!-- Album Details Modal -->
+        <div id="album-modal" class="album-modal hidden">
+            <div class="album-modal-overlay"></div>
+            <div class="album-modal-content">
+                <div class="album-modal-header">
+                    <button id="album-modal-close" class="album-modal-close" title="Close">×</button>
+                    <h2>Album Details</h2>
+                </div>
+                
+                <div class="album-modal-body">
+                    <div class="album-modal-info">
+                        <img id="album-modal-art" class="album-modal-art" src="" alt="Album Art">
+                        <div class="album-modal-meta">
+                            <h3 id="album-modal-title" class="album-modal-title">Album Title</h3>
+                            <p id="album-modal-artist" class="album-modal-artist">Artist Name</p>
+                            
+                            <!-- Metadata Pills -->
+                            <div class="album-meta-pills">
+                                <span id="album-modal-date" class="meta-pill">📅 2024-01-01</span>
+                                <span id="album-modal-trackcount" class="meta-pill">🎵 12 tracks</span>
+                                <span id="album-modal-duration" class="meta-pill">⏱️ 45 min</span>
+                            </div>
+                            
+                            <!-- Action Buttons -->
+                            <div class="album-action-buttons">
+                                <button id="album-play-btn" class="album-action-btn primary">▶ Play Album</button>
+                                <button id="album-queue-btn" class="album-action-btn">+ Add to Queue</button>
+                                <button id="album-download-btn" class="album-action-btn">⬇ Download Album</button>
+                                <button id="album-playlist-btn" class="album-action-btn">♡ Add to Playlist</button>
+                            </div>
+                            
+                            <!-- Quality Badge -->
+                            <div id="album-modal-quality" class="album-quality-badge">
+                                🎵 FLAC • 16bit / 44.1kHz
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Tabs -->
+                    <div class="album-tabs">
+                        <button class="album-tab active" data-tab="tracks">Tracks</button>
+                        <button class="album-tab" data-tab="info">Album Info</button>
+                    </div>
+                    
+                    <!-- Track List -->
+                    <div id="album-modal-tracks" class="album-modal-tracks">
+                        <!-- Tracks will be inserted here -->
+                    </div>
+                    
+                    <!-- Album Info (hidden by default) -->
+                    <div id="album-modal-info-tab" class="album-modal-info-tab hidden">
+                        <p id="album-modal-description">Album description and additional info...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Bottom Player -->
         <div id="player-bar" class="player-bar hidden">
@@ -427,6 +503,6 @@
     <script src="static/jsmediatags.min.js"></script>
     <script src="https://apis.google.com/js/api.js"></script>
     <script src="https://accounts.google.com/gsi/client"></script>
-    <script src="/static/app.js?v=0104C"></script>
+    <script src="/static/app.js?t=1736053100"></script></script>
 </body>
 </html>

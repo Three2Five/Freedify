@@ -388,6 +388,8 @@ body {
     flex-shrink: 0;
     position: relative;
     z-index: 1;
+    min-width: 40px;
+    text-align: right;
 }
 
 .track-play-indicator {
@@ -605,6 +607,12 @@ body {
 .audio-format-badge.flac {
     background: linear-gradient(135deg, #10b981 0%, #059669 100%);
     color: white;
+}
+
+.audio-format-badge.hi-res {
+    background: linear-gradient(135deg, #06b6d4 0%, #0ea5e9 100%);
+    color: white;
+    box-shadow: 0 0 8px rgba(6, 182, 212, 0.4);
 }
 
 .audio-format-badge.mp3 {
@@ -976,11 +984,19 @@ body {
     font-size: 1.25rem;
     font-weight: 700;
     margin-bottom: var(--spacing-xs);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    width: 100%;
+    box-sizing: border-box;
 }
 
 .detail-artist {
     color: var(--text-secondary);
     margin-bottom: var(--spacing-xs);
+    text-align: center;
 }
 
 .detail-stats {
@@ -1048,6 +1064,166 @@ body {
 .album-tracks-count, .artist-followers {
     color: var(--text-tertiary);
     font-size: 0.875rem;
+}
+
+/* ==================== Results Grid (Card Layout) ==================== */
+.results-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: var(--spacing-md);
+    padding: var(--spacing-md) 0;
+    width: 100%;
+}
+
+.results-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    width: 100%;
+    padding-bottom: 20px; /* Minimal padding, robust padding on container */
+}
+
+/* Album Card (Vertical Layout) */
+.album-card {
+    display: flex !important;
+    flex-direction: column !important;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    cursor: pointer;
+    transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.album-card:hover {
+    transform: translateY(-4px);
+    background: var(--bg-tertiary);
+}
+
+.album-card-art-container {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+}
+
+.album-card-art {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: var(--bg-tertiary);
+}
+
+/* HiRes Badge */
+.hires-badge {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background: linear-gradient(135deg, #00d4ff 0%, #00b4d8 100%);
+    color: #000;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    box-shadow: 0 2px 8px rgba(0, 212, 255, 0.4);
+}
+
+.album-card-info {
+    padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.album-card-title {
+    font-weight: 600;
+    font-size: 0.95rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.album-card-artist {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+}
+
+.album-card-meta {
+    display: flex;
+    justify-content: space-between;
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+}
+
+/* Track Card Specifics */
+.track-card-play-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5rem;
+    color: white;
+    opacity: 0;
+    transition: opacity 0.2s;
+    backdrop-filter: blur(2px);
+}
+
+.album-card:hover .track-card-play-overlay {
+    opacity: 1;
+}
+
+/* Responsive: Larger cards on desktop */
+@media (min-width: 1200px) {
+    .results-grid {
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    }
+}
+
+/* Mobile: 2-3 cards per row */
+@media (max-width: 600px) {
+    .results-grid {
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: var(--spacing-sm);
+    }
+    
+    .album-card-info {
+        padding: var(--spacing-xs) var(--spacing-sm);
+    }
+    
+    .album-card-title {
+        font-size: 0.85rem;
+    }
+    
+    .album-card-artist {
+        font-size: 0.75rem;
+    }
+}
+
+/* Sort Filter Button */
+.sort-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto; /* Push to right side */
+    background: var(--bg-tertiary);
+    border: 1px solid var(--text-tertiary);
+    opacity: 0.8;
+}
+
+.sort-btn:hover {
+    opacity: 1;
+    background: var(--bg-elevated);
+}
+
+.sort-icon {
+    font-size: 0.8rem;
 }
 
 /* ==================== Empty State ==================== */
@@ -1120,9 +1296,26 @@ body {
     opacity: 1;
 }
 
+.results-section {
+    flex: 1 1 0;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+    /* display: flex; Removed - using absolute child methodology */
+}
+
 .results-container {
-    max-width: 600px;
-    margin: 0 auto;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    
+    margin: 0;
+    padding: 0 var(--spacing-md);
+    padding-bottom: 120px; /* Space for player bar */
 }
 
 /* ==================== Player Bar ==================== */
@@ -1580,6 +1773,39 @@ body {
     z-index: 5;
 }
 
+/* Base style for track action buttons (Queue, Download) */
+.track-action-btn {
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+    font-size: 1rem;
+    position: relative;
+    z-index: 10; /* Above duration text */
+    margin-left: 8px;
+}
+
+/* Container for track buttons with proper gap */
+.track-buttons {
+    display: flex;
+    align-items: center;
+    gap: 16px; /* Clear separation */
+    flex-shrink: 0;
+}
+
+.track-action-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--accent);
+}
+
 .download-btn {
     width: 44px; /* Larger hit area */
     height: 44px;
@@ -1592,8 +1818,9 @@ body {
     cursor: pointer;
     border-radius: 50%;
     transition: all 0.2s ease;
-    opacity: 1; /* Always visible */
+    opacity: 1 !important; /* Always visible */
     font-size: 1.2rem;
+    flex-shrink: 0;
 }
 
 .download-btn:hover {
@@ -3356,4 +3583,471 @@ body {
 .progress-bar::-webkit-slider-thumb:hover, 
 #fs-progress-bar::-webkit-slider-thumb:hover {
     transform: scale(1.2);
+}
+
+/* ==================== Album Details Modal ==================== */
+.album-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2500;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: var(--spacing-lg);
+}
+
+.album-modal.hidden {
+    display: none;
+}
+
+.album-modal-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(10px);
+}
+
+.album-modal-content {
+    position: relative;
+    width: 100%;
+    max-width: 700px;
+    max-height: 90vh;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.album-modal-header {
+    display: flex;
+    align-items: center;
+    padding: var(--spacing-md) var(--spacing-lg);
+    background: var(--bg-tertiary);
+    border-bottom: 1px solid var(--text-tertiary);
+}
+
+.album-modal-header h2 {
+    flex: 1;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+
+.album-modal-close {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    cursor: pointer;
+    order: 1;
+    margin-left: var(--spacing-md);
+}
+
+.album-modal-close:hover {
+    color: var(--accent);
+}
+
+.album-modal-body {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: var(--spacing-lg);
+}
+
+.album-modal-info {
+    display: flex;
+    gap: var(--spacing-lg);
+    margin-bottom: var(--spacing-lg);
+}
+
+.album-modal-art {
+    width: 160px;
+    height: 160px;
+    border-radius: var(--radius-md);
+    object-fit: cover;
+    flex-shrink: 0;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+.album-modal-meta {
+    flex: 1;
+    min-width: 0;
+}
+
+.album-modal-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.album-modal-artist {
+    color: var(--text-secondary);
+    font-size: 1rem;
+    margin-bottom: var(--spacing-sm);
+}
+
+/* Metadata Pills */
+.album-meta-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: var(--spacing-md);
+}
+
+.meta-pill {
+    background: var(--bg-tertiary);
+    padding: 4px 10px;
+    border-radius: var(--radius-full);
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    border: 1px solid var(--text-tertiary);
+}
+
+/* Action Buttons */
+.album-action-buttons {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: var(--spacing-md);
+}
+
+.album-action-btn {
+    padding: 8px 4px;
+    border-radius: var(--radius-full);
+    font-size: 0.75rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid var(--text-tertiary);
+    background: transparent;
+    color: var(--text-primary);
+}
+
+.album-action-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--accent);
+}
+
+.album-action-btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: white;
+}
+
+.album-action-btn.primary:hover {
+    background: var(--accent-light);
+}
+
+/* Quality Badge */
+.album-quality-badge {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    padding: 4px 0;
+    margin-top: 4px;
+}
+
+@media (max-width: 480px) {
+    .album-action-buttons {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 100%;
+        margin: 0 auto;
+    }
+    .album-action-btn {
+        padding: 10px 16px;
+        font-size: 0.8rem;
+        height: auto;
+        min-width: 0;
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+
+/* Tabs */
+.album-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: var(--spacing-md);
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    padding: 4px;
+}
+
+.queue-btn {
+    color: var(--text-secondary);
+    font-size: 1.2rem; /* Slightly larger + */
+    line-height: 1;
+    margin-right: 12px;
+}
+
+.queue-btn:hover {
+    color: var(--accent);
+    background: var(--bg-tertiary);
+}
+
+.album-tab {
+    flex: 1;
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s;
+}
+
+.album-tab.active {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.album-tab:hover:not(.active) {
+    color: var(--text-primary);
+}
+
+/* Track List in Modal */
+.album-modal-tracks {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.album-modal-track {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.album-modal-track:hover {
+    background: var(--bg-tertiary);
+}
+
+.album-modal-track.playing {
+    background: rgba(var(--accent-rgb), 0.1);
+    border: 1px solid var(--accent);
+}
+
+.album-track-num {
+    width: 24px;
+    color: var(--text-tertiary);
+    font-size: 0.85rem;
+    text-align: center;
+}
+
+.album-track-play {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.album-track-play:hover {
+    color: var(--accent);
+}
+
+.album-track-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.album-track-name {
+    font-size: 0.9rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.album-track-playlist {
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    padding: 4px;
+}
+
+.album-track-playlist:hover {
+    color: #ff4757;
+}
+
+.album-track-duration {
+    color: var(--text-tertiary);
+    font-size: 0.8rem;
+    min-width: 40px;
+    text-align: right;
+}
+
+.album-track-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.album-track-actions button {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+}
+
+.album-track-actions button:hover {
+    color: var(--accent);
+    background: var(--bg-tertiary);
+}
+
+/* Album Info Tab */
+.album-modal-info-tab {
+    padding: var(--spacing-md);
+    color: var(--text-secondary);
+    line-height: 1.6;
+}
+
+.album-modal-info-tab.hidden {
+    display: none;
+}
+
+/* Mobile Responsive */
+@media (max-width: 600px) {
+    .album-modal-info {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+    }
+    
+    .album-modal-art {
+        width: 140px;
+        height: 140px;
+    }
+    
+    .album-meta-pills {
+        justify-content: center;
+    }
+    
+    .album-action-buttons {
+        justify-content: center;
+    }
+}
+
+/* ==================== Crossfade Toggle ==================== */
+.crossfade-toggle {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-md);
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    margin: var(--spacing-sm) var(--spacing-md);
+}
+
+.crossfade-icon {
+    font-size: 1.2rem;
+    color: var(--accent);
+}
+
+.crossfade-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.crossfade-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.crossfade-desc {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+/* Toggle Switch */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 28px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #404040;
+    border-radius: 28px;
+    transition: all 0.3s;
+}
+
+.toggle-slider::before {
+    position: absolute;
+    content: "";
+    height: 22px;
+    width: 22px;
+    left: 3px;
+    bottom: 3px;
+    background: white;
+    border-radius: 50%;
+    transition: all 0.3s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+    background: var(--accent);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+    transform: translateX(20px);
+}
+
+/* Hi-Res Button Style (Cyan) */
+#hifi-btn.hi-res {
+    background: linear-gradient(135deg, #00f2ff, #00c3ff) !important;
+    color: #000 !important;
+    box-shadow: 0 0 15px rgba(0, 242, 255, 0.4);
+    border: none;
+}
+
+#hifi-btn.hi-res:hover {
+    box-shadow: 0 0 20px rgba(0, 242, 255, 0.6);
+    transform: scale(1.05);
 }

@@ -13,16 +13,20 @@ const state = {
     repeatMode: 'none', // 'none' | 'all' | 'one'
     volume: 1,
     muted: false,
-    crossfadeDuration: 3, // seconds
+    crossfadeDuration: 1, // seconds (when crossfade is enabled)
+    crossfadeEnabled: localStorage.getItem('freedify_crossfade') === 'true', // Crossfade toggle
     playlists: JSON.parse(localStorage.getItem('freedify_playlists') || '[]'), // User playlists
     scrobbledCurrent: false, // Track if current song was scrobbled
     listenBrainzConfig: { valid: false, username: null }, // LB status
-    hifiMode: localStorage.getItem('freedify_hifi') === 'true', // HiFi FLAC streaming mode
+    hiResMode: localStorage.getItem('freedify_hires') !== 'false', // Hi-Res 24-bit mode (Default True)
+    sortOrder: 'newest', // 'newest' or 'oldest' for album sorting
+    lastSearchResults: [], // Store last search results for re-rendering
+    lastSearchType: 'track', // Store last search type
 };
 
 // ========== DOM ELEMENTS ==========
-// App.js v0104C
-console.log("Freedify v0104C Loaded - Mini Player Marquee");
+// App.js v0106L - Robust Proxy Cleanup
+console.log("Freedify v0106L Loaded - Robust Proxy Cleanup");
 
 
 // Helper for multiple selectors (Fix for ReferenceError: $$ is not defined)
@@ -230,6 +234,41 @@ allTypeBtns.forEach(btn => {
     });
 });
 
+// Sort Filter Toggle
+const sortFilterBtn = $('#sort-filter-btn');
+if (sortFilterBtn) {
+    sortFilterBtn.addEventListener('click', () => {
+        // Toggle sort order
+        state.sortOrder = state.sortOrder === 'newest' ? 'oldest' : 'newest';
+        
+        // Update button text and icon
+        if (state.sortOrder === 'newest') {
+            sortFilterBtn.innerHTML = '<span class="sort-icon">↓</span> Newest';
+        } else {
+            sortFilterBtn.innerHTML = '<span class="sort-icon">↑</span> Oldest';
+        }
+        
+        // Re-render existing results with new sort order (no new API call)
+        if (state.lastSearchResults.length > 0 && 
+            (state.lastSearchType === 'album' || state.lastSearchType === 'podcast')) {
+            renderResults(state.lastSearchResults, state.lastSearchType, false);
+        }
+    });
+}
+
+// Crossfade Toggle
+const crossfadeCheckbox = $('#crossfade-checkbox');
+if (crossfadeCheckbox) {
+    // Initialize from state
+    crossfadeCheckbox.checked = state.crossfadeEnabled;
+    
+    crossfadeCheckbox.addEventListener('change', () => {
+        state.crossfadeEnabled = crossfadeCheckbox.checked;
+        localStorage.setItem('freedify_crossfade', state.crossfadeEnabled);
+        showToast(state.crossfadeEnabled ? 'Crossfade enabled' : 'Crossfade disabled');
+    });
+}
+
 // ========== PLAYLIST MANAGEMENT ==========
 function savePlaylists() {
     localStorage.setItem('freedify_playlists', JSON.stringify(state.playlists));
@@ -256,27 +295,35 @@ function createPlaylist(name, tracks = []) {
     return playlist;
 }
 
-function addToPlaylist(playlistId, track) {
+function addToPlaylist(playlistId, trackOrTracks) {
     const playlist = state.playlists.find(p => p.id === playlistId);
     if (!playlist) return;
     
-    // Avoid duplicates
-    if (playlist.tracks.some(t => t.id === track.id)) {
-        showToast('Track already in playlist');
-        return;
-    }
+    const tracksToAdd = Array.isArray(trackOrTracks) ? trackOrTracks : [trackOrTracks];
+    let addedCount = 0;
     
-    playlist.tracks.push({
-        id: track.id,
-        name: track.name,
-        artists: track.artists,
-        album: track.album || '',
-        album_art: track.album_art || track.image || '/static/icon.svg',
-        isrc: track.isrc || track.id,
-        duration: track.duration || '0:00'
+    tracksToAdd.forEach(track => {
+        // Avoid duplicates
+        if (playlist.tracks.some(t => t.id === track.id)) return;
+        
+        playlist.tracks.push({
+            id: track.id,
+            name: track.name,
+            artists: track.artists,
+            album: track.album || '',
+            album_art: track.album_art || track.image || '/static/icon.svg',
+            isrc: track.isrc || track.id,
+            duration: track.duration || '0:00'
+        });
+        addedCount++;
     });
-    savePlaylists();
-    showToast(`Added to "${playlist.name}"`);
+    
+    if (addedCount > 0) {
+        savePlaylists();
+        showToast(`Added ${addedCount} tracks to "${playlist.name}"`);
+    } else {
+        showToast('Tracks already in playlist');
+    }
 }
 
 function deleteFromPlaylist(playlistId, trackId) {
@@ -400,11 +447,19 @@ async function performSearch(query, append = false) {
         hideLoading();
         
         // Check if it was a Spotify URL
-        if (data.is_url && data.tracks) {
+        // Check if it was a Spotify/Imported URL
+        if (data.is_url) {
             // Auto-open detail view for albums/playlists
-            if (data.type === 'album' || data.type === 'playlist' || data.type === 'artist') {
+            if (data.tracks && (data.type === 'album' || data.type === 'playlist' || data.type === 'artist')) {
                 showDetailView(data.results[0], data.tracks);
                 return;
+            }
+            // Auto-play single track (e.g. YouTube link)
+            if (data.results && data.results.length === 1 && data.type === 'track') {
+                const track = data.results[0];
+                playTrack(track);
+                showToast(`Playing imported track: ${track.name}`);
+                // Also render it so they can see it
             }
         }
         
@@ -432,6 +487,14 @@ async function performSearch(query, append = false) {
 function renderResults(results, type, append = false) {
     const loadMoreBtn = $('#load-more-btn');
     
+    // Store results for re-rendering (when sort changes)
+    if (!append) {
+        state.lastSearchResults = results || [];
+        state.lastSearchType = type;
+    } else if (results) {
+        state.lastSearchResults = [...state.lastSearchResults, ...results];
+    }
+    
     if (!results || results.length === 0) {
         if (!append) {
             resultsContainer.innerHTML = `
@@ -446,24 +509,51 @@ function renderResults(results, type, append = false) {
     }
     
     let grid;
+    // Helper to get or create Load More button
+    let persistentLoadMoreBtn = document.getElementById('load-more-btn');
+    if (persistentLoadMoreBtn) {
+        persistentLoadMoreBtn.remove(); // Rescue it
+    } else {
+        // Create fresh if missing (e.g. after view switch)
+        persistentLoadMoreBtn = document.createElement('button');
+        persistentLoadMoreBtn.id = 'load-more-btn';
+        persistentLoadMoreBtn.className = 'load-more-btn hidden';
+        persistentLoadMoreBtn.textContent = 'Load More Results';
+        persistentLoadMoreBtn.addEventListener('click', () => {
+             if (state.lastSearchQuery) {
+                 performSearch(state.lastSearchQuery, true);
+             }
+        });
+    }
+
     if (append) {
         // Get existing grid or create new
-        grid = resultsContainer.querySelector('.results-grid');
+        grid = resultsContainer.querySelector('.results-grid') || resultsContainer.querySelector('.results-list');
         if (!grid) {
             grid = document.createElement('div');
-            grid.className = 'results-grid';
+            // Use list layout for tracks, grid for others
+            grid.className = (type === 'track') ? 'results-list' : 'results-grid';
             resultsContainer.innerHTML = '';
             resultsContainer.appendChild(grid);
         }
     } else {
         grid = document.createElement('div');
-        grid.className = 'results-grid';
+        // Use list layout for tracks, grid for others
+        grid.className = (type === 'track') ? 'results-list' : 'results-grid';
+        
+        resultsContainer.innerHTML = '';
+        resultsContainer.appendChild(grid);
     }
     
     // For 'podcast' we reuse album card style
     if (type === 'podcast') {
-        results.forEach(item => {
-            // Ensure compatibility (podcasts look like albums)
+        // Sort by year (newest first by default)
+        const sorted = [...results].sort((a, b) => {
+            const yearA = parseInt(a.release_date?.slice(0, 4)) || 0;
+            const yearB = parseInt(b.release_date?.slice(0, 4)) || 0;
+            return state.sortOrder === 'newest' ? yearB - yearA : yearA - yearB;
+        });
+        sorted.forEach(item => {
             grid.innerHTML += renderAlbumCard(item);
         });
     } else if (type === 'track') {
@@ -471,7 +561,13 @@ function renderResults(results, type, append = false) {
             grid.innerHTML += renderTrackCard(track);
         });
     } else if (type === 'album') {
-        results.forEach(album => {
+        // Sort by year (newest first by default)
+        const sorted = [...results].sort((a, b) => {
+            const yearA = parseInt(a.release_date?.slice(0, 4)) || 0;
+            const yearB = parseInt(b.release_date?.slice(0, 4)) || 0;
+            return state.sortOrder === 'newest' ? yearB - yearA : yearA - yearB;
+        });
+        sorted.forEach(album => {
             grid.innerHTML += renderAlbumCard(album);
         });
     } else if (type === 'artist') {
@@ -479,32 +575,64 @@ function renderResults(results, type, append = false) {
             grid.innerHTML += renderArtistCard(artist);
         });
     }
-    
-    
-    if (!append) {
-        resultsContainer.innerHTML = '';
-        resultsContainer.appendChild(grid);
+    // Always append Load More button at the very end
+    if (persistentLoadMoreBtn) {
+        resultsContainer.appendChild(persistentLoadMoreBtn);
     }
     
     // Attach click listeners
     if (type === 'track') {
-        grid.querySelectorAll('.track-item').forEach((el, i) => {
-            el.addEventListener('click', () => playTrack(results[i]));
+        grid.querySelectorAll('.track-item').forEach(el => {
+            // Main card click (Play)
+            el.addEventListener('click', (e) => {
+                const trackId = String(el.dataset.id); 
+                const track = results.find(t => String(t.id) === trackId);
+                console.log('Track card clicked, ID:', trackId, 'Found:', track?.name);
+                if (track) {
+                    playTrack(track); 
+                    showToast(`Playing "${track.name}"`);
+                }
+            });
+
+            // Queue button click
+            const queueBtn = el.querySelector('.queue-btn');
+            if (queueBtn) {
+                queueBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const trackId = String(el.dataset.id);
+                    const track = results.find(t => String(t.id) === trackId);
+                    if (track) addToQueue(track);
+                });
+            }
         });
+        
         // Fetch features regarding DJ Mode
         if (state.djMode) {
             fetchAudioFeaturesForTracks(results);
         }
     } else if (type === 'album' || type === 'podcast') {
-        const items = grid.querySelectorAll('.album-item');
-        items.forEach((el, i) => {
-            el.addEventListener('click', () => openAlbum(results[i].id));
+        // ... (keep existing)
+        grid.querySelectorAll('.album-card').forEach(el => {
+            el.addEventListener('click', () => {
+                console.log('Album card clicked, ID:', el.dataset.id);
+                openAlbum(el.dataset.id);
+            });
         });
     } else if (type === 'artist') {
         grid.querySelectorAll('.artist-item').forEach((el, i) => {
             el.addEventListener('click', () => openArtist(results[i].id));
         });
     }
+
+
+}
+
+// Add track to queue (called from Queue button click)
+function addToQueue(track) {
+    if (!track) return;
+    state.queue.push(track);
+    updateQueueUI();
+    showToast(`Added "${track.name}" to queue`);
 }
 
 const downloadModal = $('#download-modal');
@@ -525,6 +653,11 @@ window.openDownloadModal = function(trackJson) {
     trackToDownload = track;
     isBatchDownload = false;
     
+    // Check if we are coming from detailed view (Album/Playlist)
+    if (!detailView.classList.contains('hidden')) {
+        state.pendingAlbumReopen = true;
+    }
+    
     downloadTrackName.textContent = `${track.name} - ${track.artists}`;
     downloadModal.classList.remove('hidden');
 };
@@ -535,6 +668,11 @@ if (downloadAllBtn) {
         
         isBatchDownload = true;
         trackToDownload = null;
+        
+        // Track previous view
+        if (!detailView.classList.contains('hidden')) {
+             state.pendingAlbumReopen = true;
+        }
         
         // Get album/playlist name
         const name = $('.detail-name').textContent;
@@ -571,6 +709,14 @@ function closeDownloadModal() {
     downloadModal.classList.add('hidden');
     trackToDownload = null;
     isBatchDownload = false;
+    
+    // Restore Album/Playlist view if it was active
+    if (state.pendingAlbumReopen) {
+        detailView.classList.remove('hidden'); 
+        state.pendingAlbumReopen = false;
+        // Also ensure Results are hidden if we are in detail view
+        resultsSection.classList.add('hidden');
+    }
 }
 
 downloadCancelBtn.addEventListener('click', closeDownloadModal);
@@ -667,39 +813,43 @@ downloadConfirmBtn.addEventListener('click', async () => {
 
 function renderTrackCard(track) {
     const year = track.release_date ? track.release_date.slice(0, 4) : '';
-    const artistYear = year ? `${escapeHtml(track.artists)} • ${year}` : escapeHtml(track.artists);
+    // Use horizontal list item layout
     return `
         <div class="track-item" data-id="${track.id}">
-            <img class="track-album-art" src="${track.album_art || '/static/icon.svg'}" alt="Album art" loading="lazy">
+            <img class="track-album-art" src="${track.album_art || '/static/icon.svg'}" alt="${escapeHtml(track.name)}" loading="lazy">
             <div class="track-info">
-                <p class="track-name">${escapeHtml(track.name)}</p>
-                <p class="track-artist">${artistYear}</p>
+                <div class="track-name">${escapeHtml(track.name)}</div>
+                <div class="track-artist">${escapeHtml(track.artists)}</div>
             </div>
-            
-            <div class="track-actions">
-                ${renderDJBadgeForTrack(track)}
-                <span class="track-duration">${track.duration}</span>
-                <button class="download-btn" title="Download" onclick="event.stopPropagation(); openDownloadModal('${encodeURIComponent(JSON.stringify(track))}')">
-                    ⬇
-                </button>
-            </div>
+            <span class="track-duration">${track.duration_ms ? formatTime(track.duration_ms / 1000) : (track.duration && track.duration.toString().includes(':') ? track.duration : formatTime(track.duration))}</span>
+            <button class="track-action-btn queue-btn" title="Add to Queue">+</button>
         </div>
     `;
 }
 
+
 // ... (keep renderAlbumCard and renderArtistCard as is) ...
 
 function renderAlbumCard(album) {
-    const year = album.release_date ? album.release_date.slice(0, 4) : '';
-    const trackInfo = album.total_tracks ? `${album.total_tracks} tracks` : '';
-    const meta = [trackInfo, year].filter(Boolean).join(' • ');
+    const year = (album.release_date && album.release_date.length >= 4) ? album.release_date.slice(0, 4) : '';
+    const trackCount = album.total_tracks ? `${album.total_tracks} tracks` : '';
+    // Check for HiRes quality (if available from API)
+    const isHiRes = album.audio_quality?.isHiRes || album.is_hires || false;
+    const hiResBadge = isHiRes ? '<span class="hires-badge">HI-RES</span>' : '';
+    
     return `
-        <div class="album-item" data-id="${album.id}">
-            <img class="album-art" src="${album.album_art || '/static/icon.svg'}" alt="Album art" loading="lazy">
-            <div class="album-info">
-                <p class="album-name">${escapeHtml(album.name)}</p>
-                <p class="album-artist">${escapeHtml(album.artists)}</p>
-                <p class="album-tracks-count">${meta}</p>
+        <div class="album-card" data-id="${album.id}" data-year="${year || '0'}">
+            <div class="album-card-art-container">
+                <img class="album-card-art" src="${album.album_art || '/static/icon.svg'}" alt="${escapeHtml(album.name)}" loading="lazy">
+                ${hiResBadge}
+            </div>
+            <div class="album-card-info">
+                <p class="album-card-title">${escapeHtml(album.name)}</p>
+                <p class="album-card-artist">${escapeHtml(album.artists)}</p>
+                <div class="album-card-meta">
+                    <span>${trackCount}</span>
+                    <span>${year}</span>
+                </div>
             </div>
         </div>
     `;
@@ -733,8 +883,10 @@ async function openAlbum(albumId) {
         if (!response.ok) throw new Error(album.detail);
         
         hideLoading();
-        showDetailView(album, album.tracks);
+        console.log('Opening album modal for:', album.name, album);
+        showAlbumModal(album);
     } catch (error) {
+        console.error('Failed to load album:', error);
         showError('Failed to load album');
     }
 }
@@ -833,6 +985,207 @@ async function openSetlistModal(setlistId) {
         console.error(error);
         showError('Failed to load setlist');
     }
+}
+
+// ========== ALBUM DETAILS MODAL ==========
+const albumModal = $('#album-modal');
+const albumModalClose = $('#album-modal-close');
+const albumModalOverlay = albumModal?.querySelector('.album-modal-overlay');
+let currentAlbumData = null;
+
+// Close modal
+if (albumModalClose) {
+    albumModalClose.addEventListener('click', () => {
+        albumModal.classList.add('hidden');
+    });
+}
+
+// Close on overlay click
+if (albumModalOverlay) {
+    albumModalOverlay.addEventListener('click', () => {
+        albumModal.classList.add('hidden');
+    });
+}
+
+// Tab switching
+const albumTabs = albumModal?.querySelectorAll('.album-tab');
+albumTabs?.forEach(tab => {
+    tab.addEventListener('click', () => {
+        albumTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        
+        const tabName = tab.dataset.tab;
+        if (tabName === 'tracks') {
+            $('#album-modal-tracks')?.classList.remove('hidden');
+            $('#album-modal-info-tab')?.classList.add('hidden');
+        } else {
+            $('#album-modal-tracks')?.classList.add('hidden');
+            $('#album-modal-info-tab')?.classList.remove('hidden');
+        }
+    });
+});
+
+// Action buttons
+$('#album-play-btn')?.addEventListener('click', () => {
+    if (currentAlbumData?.tracks?.length) {
+        state.queue = [...currentAlbumData.tracks];
+        state.currentIndex = 0;
+        updateQueueUI();
+        loadTrack(state.queue[0]);
+        albumModal.classList.add('hidden');
+        showToast(`Playing "${currentAlbumData.name}"`);
+    }
+});
+
+$('#album-queue-btn')?.addEventListener('click', () => {
+    if (currentAlbumData?.tracks?.length) {
+        state.queue.push(...currentAlbumData.tracks);
+        updateQueueUI();
+        albumModal.classList.add('hidden');
+        showToast(`Added ${currentAlbumData.tracks.length} tracks to queue`);
+    }
+});
+
+$('#album-download-btn')?.addEventListener('click', () => {
+    if (currentAlbumData) {
+        isBatchDownload = true;
+        trackToDownload = null;
+        state.detailTracks = currentAlbumData.tracks;
+        downloadTrackName.textContent = `${currentAlbumData.name} (${currentAlbumData.tracks?.length || 0} tracks)`;
+        downloadModal.classList.remove('hidden');
+        albumModal.classList.add('hidden');
+    }
+});
+
+$('#album-playlist-btn')?.addEventListener('click', () => {
+    if (currentAlbumData?.tracks?.length) {
+        // Open add to playlist modal with all album tracks
+        if (typeof openAddToPlaylistModal === 'function') {
+            openAddToPlaylistModal(currentAlbumData.tracks, currentAlbumData.name);
+        } else {
+            showToast('Playlist feature coming soon');
+        }
+    }
+});
+
+function showAlbumModal(album) {
+    if (!albumModal) return;
+    
+    currentAlbumData = album;
+    const tracks = album.tracks || [];
+    
+    // Populate modal data
+    $('#album-modal-art').src = album.album_art || album.image || '/static/icon.svg';
+    $('#album-modal-title').textContent = album.name || 'Unknown Album';
+    $('#album-modal-artist').textContent = album.artists || 'Unknown Artist';
+    
+    // Metadata pills
+    const date = album.release_date || '';
+    const genre = album.genres?.[0] || album.genre || '';
+    const trackCount = tracks.length || album.total_tracks || 0;
+    const totalDuration = tracks.reduce((sum, t) => sum + (parseDuration(t.duration) || 0), 0);
+    const durationMins = Math.round(totalDuration / 60);
+    
+    $('#album-modal-date').textContent = `📅 ${date || 'Unknown'}`;
+    // Genre removed
+    $('#album-modal-trackcount').textContent = `🎵 ${trackCount} tracks`;
+    $('#album-modal-duration').textContent = `⏱️ ${durationMins || '??'} min`;
+    
+    // Quality badge
+    const format = album.format || (state.hifiMode ? 'FLAC' : 'MP3');
+    const bitDepth = album.audio_quality?.maximumBitDepth || 16;
+    const sampleRate = album.audio_quality?.maximumSamplingRate || 44.1;
+    $('#album-modal-quality').textContent = `🎵 ${format} • ${bitDepth}bit / ${sampleRate}kHz`;
+    
+    // Render track list
+    const tracksContainer = $('#album-modal-tracks');
+    tracksContainer.innerHTML = tracks.map((track, i) => `
+        <div class="album-modal-track" data-index="${i}">
+            <span class="album-track-num">${i + 1}.</span>
+            <button class="album-track-play" title="Play" data-index="${i}">▶</button>
+            <div class="album-track-info">
+                <p class="album-track-name">${escapeHtml(track.name)}</p>
+            </div>
+            <button class="album-track-playlist" title="Add to Playlist" data-index="${i}">♡</button>
+            <span class="album-track-duration">${track.duration || '--:--'}</span>
+            <div class="album-track-actions">
+                <button title="Add to Queue" data-action="queue" data-index="${i}">+</button>
+                <button title="Download" data-action="download" data-index="${i}">⬇</button>
+            </div>
+        </div>
+    `).join('');
+    
+    // Track click handlers
+    tracksContainer.querySelectorAll('.album-track-play').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.index);
+            state.queue = [...tracks];
+            state.currentIndex = idx;
+            updateQueueUI();
+            loadTrack(tracks[idx]);
+            albumModal.classList.add('hidden');
+        });
+    });
+    
+    tracksContainer.querySelectorAll('[data-action="queue"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.index);
+            state.queue.push(tracks[idx]);
+            updateQueueUI();
+            showToast(`Added "${tracks[idx].name}" to queue`);
+        });
+    });
+    
+    // Playlist button handler
+    tracksContainer.querySelectorAll('.album-track-playlist').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.index);
+            const track = tracks[idx];
+            // Open add to playlist modal
+            if (typeof openAddToPlaylistModal === 'function') {
+                openAddToPlaylistModal(track);
+            } else {
+                showToast('Playlist feature coming soon');
+            }
+        });
+    });
+    
+    tracksContainer.querySelectorAll('[data-action="download"]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.index);
+            // Hide album modal first so download modal appears on top
+            albumModal.classList.add('hidden');
+            // Store album data so we can reopen after download closes
+            state.pendingAlbumReopen = { album, tracks };
+            openDownloadModal(encodeURIComponent(JSON.stringify(tracks[idx])));
+        });
+    });
+    
+    // Album Info tab
+    $('#album-modal-description').textContent = album.description || 
+        `${album.name} by ${album.artists}. Released ${date}. ${trackCount} tracks.`;
+    
+    // Reset to tracks tab
+    albumTabs?.forEach(t => t.classList.remove('active'));
+    albumModal.querySelector('[data-tab="tracks"]')?.classList.add('active');
+    $('#album-modal-tracks')?.classList.remove('hidden');
+    $('#album-modal-info-tab')?.classList.add('hidden');
+    
+    // Show modal
+    albumModal.classList.remove('hidden');
+}
+
+// Helper to parse duration string to seconds
+function parseDuration(dur) {
+    if (!dur) return 0;
+    const parts = dur.split(':').map(Number);
+    if (parts.length === 2) return parts[0] * 60 + parts[1];
+    if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+    return 0;
 }
 
 async function openArtist(artistId) {
@@ -1065,35 +1418,7 @@ if ('serviceWorker' in navigator) {
 showEmptyState();
 
 
-function renderAlbumCard(album) {
-    const year = album.release_date ? album.release_date.slice(0, 4) : '';
-    const trackInfo = album.total_tracks ? `${album.total_tracks} tracks` : '';
-    const meta = [trackInfo, year].filter(Boolean).join(' • ');
-    return `
-        <div class="album-item" data-id="${album.id}">
-            <img class="album-art" src="${album.album_art || '/static/icon.svg'}" alt="Album art" loading="lazy">
-            <div class="album-info">
-                <p class="album-name">${escapeHtml(album.name)}</p>
-                <p class="album-artist">${escapeHtml(album.artists)}</p>
-                <p class="album-tracks-count">${meta}</p>
-            </div>
-        </div>
-    `;
-}
-
-function renderArtistCard(artist) {
-    const followers = artist.followers ? `${(artist.followers / 1000).toFixed(0)}K followers` : '';
-    return `
-        <div class="artist-item" data-id="${artist.id}">
-            <img class="artist-art" src="${artist.image || '/static/icon.svg'}" alt="Artist" loading="lazy">
-            <div class="artist-info">
-                <p class="artist-name">${escapeHtml(artist.name)}</p>
-                <p class="artist-genres">${artist.genres?.slice(0, 2).join(', ') || 'Artist'}</p>
-                <p class="artist-followers">${followers}</p>
-            </div>
-        </div>
-    `;
-}
+// Duplicate render functions removed - using definitions at line 753
 
 // ========== ALBUM / ARTIST / PLAYLIST DETAIL VIEW ==========
 // Note: openAlbum is defined earlier with setlist modal support
@@ -1341,9 +1666,14 @@ async function updateFormatBadge(audioSrc) {
         
         // Check for explicit X-Audio-Format header first (from our backend)
         const audioFormat = response.headers.get('x-audio-format');
+        const audioQuality = response.headers.get('x-audio-quality'); // Check for Hi-Res
         const contentType = response.headers.get('content-type') || '';
         
-        badge.classList.remove('hidden', 'flac', 'mp3');
+        badge.classList.remove('hidden', 'flac', 'mp3', 'hi-res');
+        
+        if (audioQuality === 'Hi-Res') {
+             badge.classList.add('hi-res');
+        }
         
         if (audioFormat === 'FLAC' || contentType.includes('flac')) {
             badge.textContent = 'FLAC';
@@ -1436,8 +1766,8 @@ async function loadTrack(track) {
     if (track.is_local && track.src) {
         player.src = track.src;
     } else {
-        const hifiParam = state.hifiMode ? '&hifi=true' : '';
-        player.src = `/api/stream/${track.isrc || track.id}?q=${encodeURIComponent(track.name + ' ' + track.artists)}${hifiParam}`;
+        const hiresParam = state.hiResMode ? '&hires=true' : '&hires=false';
+        player.src = `/api/stream/${track.isrc || track.id}?q=${encodeURIComponent(track.name + ' ' + track.artists)}${hiresParam}`;
     }
     
     try {
@@ -1796,8 +2126,8 @@ function preloadNextTrack() {
     console.log('Preloading next track into inactive player:', nextTrack.name);
     
     const query = `${nextTrack.name} ${nextTrack.artists}`;
-    const hifiParam = state.hifiMode ? '&hifi=true' : '';
-    const streamUrl = `/api/stream/${nextTrack.isrc || nextTrack.id}?q=${encodeURIComponent(query)}${hifiParam}`;
+    const hiresParam = state.hiResMode ? '&hires=true' : '&hires=false';
+    const streamUrl = `/api/stream/${nextTrack.isrc || nextTrack.id}?q=${encodeURIComponent(query)}${hiresParam}`;
     
     // Load into the inactive player for gapless transition
     const inactivePlayer = activePlayer === 1 ? audioPlayer2 : audioPlayer;
@@ -1959,6 +2289,8 @@ function showEmptyState() {
 }
 
 function formatTime(seconds) {
+    if (!seconds || isNaN(seconds)) return '0:00';
+    seconds = Math.floor(seconds); 
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
@@ -2424,6 +2756,14 @@ function initQueueDragDrop() {
             updateQueueUI();
             showToast('Queue reordered');
         });
+        
+// Add track to queue
+function addToQueue(track) {
+    if (!track) return;
+    state.queue.push(track);
+    updateQueueUI();
+    showToast(`Added "${track.name}" to queue`);
+}
     });
 }
 
@@ -3102,12 +3442,15 @@ const hifiBtn = $('#hifi-btn');
 // Initialize HiFi button state
 function updateHifiButtonUI() {
     if (hifiBtn) {
-        if (state.hifiMode) {
-            hifiBtn.classList.add('active');
-            hifiBtn.title = "HiFi Mode ON - Streaming lossless FLAC (faster startup, more data)";
+        // Always active (Green base), add .hi-res for Cyan
+        hifiBtn.classList.add('active'); // Always FLAC/HiFi
+        
+        if (state.hiResMode) {
+            hifiBtn.classList.add('hi-res');
+            hifiBtn.title = "Hi-Res Mode ON (24-bit) - Best Quality";
         } else {
-            hifiBtn.classList.remove('active');
-            hifiBtn.title = "HiFi Mode OFF - Streaming MP3 (slower startup, less data)";
+            hifiBtn.classList.remove('hi-res');
+            hifiBtn.title = "HiFi Mode ON (16-bit) - Lossless Standard";
         }
     }
 }
@@ -3115,14 +3458,14 @@ function updateHifiButtonUI() {
 // Toggle HiFi mode
 if (hifiBtn) {
     hifiBtn.addEventListener('click', () => {
-        state.hifiMode = !state.hifiMode;
-        localStorage.setItem('freedify_hifi', state.hifiMode);
+        state.hiResMode = !state.hiResMode;
+        localStorage.setItem('freedify_hires', state.hiResMode);
         updateHifiButtonUI();
         
         // Show toast notification
-        showToast(state.hifiMode ? 
-            '🎵 HiFi Mode ON - Streaming lossless FLAC' : 
-            '🎵 HiFi Mode OFF - Streaming MP3', 3000);
+        showToast(state.hiResMode ? 
+            '💎 Hi-Res Mode ON - 24-bit Audio' : 
+            '🎵 HiFi Mode ON - 16-bit Audio', 3000);
     });
     
     // Initialize UI on load
@@ -4005,7 +4348,13 @@ createPlaylistBtn?.addEventListener('click', () => {
         showToast('Enter a playlist name');
         return;
     }
-    const newPlaylist = createPlaylist(name, pendingTrackForPlaylist ? [pendingTrackForPlaylist] : []);
+    
+    let tracks = [];
+    if (pendingTrackForPlaylist) {
+        tracks = Array.isArray(pendingTrackForPlaylist) ? pendingTrackForPlaylist : [pendingTrackForPlaylist];
+    }
+    
+    const newPlaylist = createPlaylist(name, tracks);
     closeAddToPlaylistModal();
 });
 
