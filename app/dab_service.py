@@ -16,10 +16,13 @@ class DabService:
         # Load credentials at runtime (not import time) for cloud deployment compatibility
         self.session_token = os.getenv("DAB_SESSION", "")
         self.visitor_id = os.getenv("DAB_VISITOR_ID", "")
+        self.proxy_url = os.getenv("DAB_PROXY", "")  # Optional: residential proxy URL
         
         # Debug: Log if credentials are present (not the actual values)
         if self.session_token:
             logger.info(f"Dab credentials loaded: session={len(self.session_token)} chars, visitor={len(self.visitor_id)} chars")
+            if self.proxy_url:
+                logger.info(f"Dab proxy configured: {self.proxy_url[:30]}...")
         else:
             logger.warning("Dab credentials not found - Hi-Res streaming will be unavailable")
         
@@ -31,12 +34,20 @@ class DabService:
         self.cookies = {
             "session": self.session_token
         }
-        self.client = httpx.AsyncClient(
-            headers=self.headers,
-            cookies=self.cookies,
-            timeout=10.0,
-            follow_redirects=True
-        )
+        
+        # Configure client with optional proxy
+        client_kwargs = {
+            "headers": self.headers,
+            "cookies": self.cookies,
+            "timeout": 15.0,
+            "follow_redirects": True
+        }
+        
+        if self.proxy_url:
+            # Proxy format: http://user:pass@host:port or http://host:port
+            client_kwargs["proxy"] = self.proxy_url
+            
+        self.client = httpx.AsyncClient(**client_kwargs)
 
     async def search_tracks(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Search for tracks on Dab Music."""
