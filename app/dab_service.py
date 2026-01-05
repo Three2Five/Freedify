@@ -12,19 +12,24 @@ logger = logging.getLogger(__name__)
 class DabService:
     BASE_URL = "https://dabmusic.xyz/api"
     
-    # User credentials - MUST be set via environment variables
-    # Set DAB_SESSION and DAB_VISITOR_ID in your environment
-    SESSION_TOKEN = os.getenv("DAB_SESSION", "")
-    VISITOR_ID = os.getenv("DAB_VISITOR_ID", "")
-    
     def __init__(self):
+        # Load credentials at runtime (not import time) for cloud deployment compatibility
+        self.session_token = os.getenv("DAB_SESSION", "")
+        self.visitor_id = os.getenv("DAB_VISITOR_ID", "")
+        
+        # Debug: Log if credentials are present (not the actual values)
+        if self.session_token:
+            logger.info(f"Dab credentials loaded: session={len(self.session_token)} chars, visitor={len(self.visitor_id)} chars")
+        else:
+            logger.warning("Dab credentials not found - Hi-Res streaming will be unavailable")
+        
         self.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Referer": "https://dabmusic.xyz/",
             "Origin": "https://dabmusic.xyz"
         }
         self.cookies = {
-            "session": self.SESSION_TOKEN
+            "session": self.session_token
         }
         self.client = httpx.AsyncClient(
             headers=self.headers,
