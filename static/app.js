@@ -610,12 +610,20 @@ function renderResults(results, type, append = false) {
         if (state.djMode) {
             fetchAudioFeaturesForTracks(results);
         }
-    } else if (type === 'album' || type === 'podcast') {
-        // ... (keep existing)
+    } else if (type === 'album') {
+        // Album cards - open album modal
         grid.querySelectorAll('.album-card').forEach(el => {
             el.addEventListener('click', () => {
                 console.log('Album card clicked, ID:', el.dataset.id);
                 openAlbum(el.dataset.id);
+            });
+        });
+    } else if (type === 'podcast') {
+        // Podcast cards - open podcast episodes (not album modal)
+        grid.querySelectorAll('.album-card').forEach(el => {
+            el.addEventListener('click', () => {
+                console.log('Podcast card clicked, ID:', el.dataset.id);
+                openPodcastEpisodes(el.dataset.id);
             });
         });
     } else if (type === 'artist') {
@@ -888,6 +896,25 @@ async function openAlbum(albumId) {
     } catch (error) {
         console.error('Failed to load album:', error);
         showError('Failed to load album');
+    }
+}
+
+// Open podcast episodes in detail view (not album modal)
+async function openPodcastEpisodes(podcastId) {
+    showLoading('Loading podcast episodes...');
+    try {
+        const response = await fetch(`/api/album/${podcastId}`);
+        const podcast = await response.json();
+        if (!response.ok) throw new Error(podcast.detail);
+        
+        hideLoading();
+        console.log('Opening podcast episodes:', podcast.name, podcast);
+        
+        // Use detail view for podcasts (allows clicking episodes for info modal)
+        showDetailView(podcast, podcast.tracks || []);
+    } catch (error) {
+        console.error('Failed to load podcast:', error);
+        showError('Failed to load podcast');
     }
 }
 

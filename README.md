@@ -144,7 +144,23 @@ Open http://localhost:8000
 
 ---
 
-## 🌐 Deploy to Render
+## 🌐 Deploy to Railway (Recommended for Hi-Res)
+
+**Railway is recommended** for full Hi-Res (24-bit) support. Render blocks Dab Music API requests.
+
+1. Go to [railway.app](https://railway.app) → New Project
+2. Deploy from GitHub repo
+3. Add environment variables (see below)
+4. Go to Settings → Networking → Generate Domain
+5. Your app will be live at `your-app.up.railway.app`
+
+> **Pricing:** Railway offers a 30-day trial with $5 credit. After that, the Hobby plan is **$5/month**. If you want free hosting (with 16-bit FLAC only), use Render instead.
+
+---
+
+## 🌐 Deploy to Render (16-bit only)
+
+Render works but **Hi-Res (24-bit) streaming is not available** due to IP restrictions on Dab Music API. You'll still get 16-bit FLAC from Tidal.
 
 1. Fork/push this repo to GitHub
 2. Go to render.com → New Web Service
