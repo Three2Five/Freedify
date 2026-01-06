@@ -13,6 +13,16 @@ class DabService:
     BASE_URL = "https://dabmusic.xyz/api"
     
     def __init__(self):
+        self._initialized = False
+        self.client = None
+        self.session_token = ""
+        self.visitor_id = ""
+        
+    def _ensure_initialized(self):
+        """Lazy initialization - loads credentials on first use, not import time."""
+        if self._initialized:
+            return
+            
         # Load credentials at runtime (not import time) for cloud deployment compatibility
         self.session_token = os.getenv("DAB_SESSION", "")
         self.visitor_id = os.getenv("DAB_VISITOR_ID", "")
@@ -48,9 +58,11 @@ class DabService:
             client_kwargs["proxy"] = self.proxy_url
             
         self.client = httpx.AsyncClient(**client_kwargs)
+        self._initialized = True
 
     async def search_tracks(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Search for tracks on Dab Music."""
+        self._ensure_initialized()
         try:
             resp = await self.client.get(
                 f"{self.BASE_URL}/search",
@@ -76,6 +88,7 @@ class DabService:
 
     async def search_albums(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Search for albums on Dab Music."""
+        self._ensure_initialized()
         try:
             resp = await self.client.get(
                 f"{self.BASE_URL}/search",
@@ -97,6 +110,7 @@ class DabService:
 
     async def get_album(self, album_id: str) -> Optional[Dict[str, Any]]:
         """Get album details with tracks."""
+        self._ensure_initialized()
         try:
             clean_id = album_id.replace("dab_", "")
             # Try getAlbum endpoint first (based on test results, /getAlbum works usually if /album fails)
@@ -231,6 +245,7 @@ class DabService:
 
     async def get_stream_url(self, track_id: str, quality: str = "27") -> Optional[str]:
         """Get stream URL for a track. Quality 27=Hi-Res, 7=Lossless."""
+        self._ensure_initialized()
         try:
             clean_id = str(track_id).replace("dab_", "")
             resp = await self.client.get(
