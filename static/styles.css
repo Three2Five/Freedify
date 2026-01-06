@@ -850,6 +850,12 @@ body {
     margin-right: -100px; /* Offset to align better with button */
 }
 
+.menu-divider {
+    height: 1px;
+    background: rgba(255, 255, 255, 0.1);
+    margin: 4px 0;
+}
+
 .search-more-menu.hidden {
     display: none;
 }
@@ -4050,4 +4056,270 @@ body {
 #hifi-btn.hi-res:hover {
     box-shadow: 0 0 20px rgba(0, 242, 255, 0.6);
     transform: scale(1.05);
+}
+
+/* ==================== AI Assistant Modal ==================== */
+
+.ai-btn {
+    background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%) !important;
+    color: white !important;
+    border: none !important;
+}
+
+.ai-btn:hover {
+    box-shadow: 0 0 15px rgba(139, 92, 246, 0.5);
+    transform: scale(1.05);
+}
+
+.ai-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.2s ease;
+}
+
+.ai-modal.hidden {
+    display: none;
+}
+
+.ai-modal-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+}
+
+.ai-modal-content {
+    position: relative;
+    width: 90%;
+    max-width: 500px;
+    max-height: 80vh;
+    background: linear-gradient(135deg, rgba(30, 30, 45, 0.95), rgba(20, 20, 35, 0.98));
+    border-radius: var(--radius-lg);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.ai-modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(99, 102, 241, 0.1));
+}
+
+.ai-modal-header h2 {
+    margin: 0;
+    font-size: 1.2rem;
+    color: var(--text-primary);
+}
+
+.ai-modal-close {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.ai-modal-close:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.1);
+}
+/* Tabs styles removed */
+
+.ai-tab-content {
+    padding: var(--spacing-lg);
+    overflow-y: auto;
+    max-height: 50vh;
+}
+
+.ai-tab-content.hidden {
+    display: none;
+}
+
+.ai-tab-desc {
+    margin: 0 0 var(--spacing-md);
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.ai-input {
+    width: 100%;
+    padding: var(--spacing-md);
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: var(--radius-md);
+    color: var(--text-primary);
+    font-size: 1rem;
+    resize: none;
+    font-family: inherit;
+}
+
+.ai-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 10px rgba(139, 92, 246, 0.3);
+}
+
+.ai-examples {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-xs);
+    margin: var(--spacing-sm) 0 var(--spacing-md);
+}
+
+.ai-example {
+    padding: 4px 10px;
+    background: rgba(139, 92, 246, 0.2);
+    border-radius: var(--radius-full);
+    font-size: 0.8rem;
+    color: var(--accent-light);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.ai-example:hover {
+    background: rgba(139, 92, 246, 0.4);
+    transform: scale(1.05);
+}
+
+.ai-duration-row {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    margin: var(--spacing-md) 0;
+    color: var(--text-secondary);
+}
+
+.ai-duration-row input[type="range"] {
+    flex: 1;
+    accent-color: var(--accent);
+}
+
+.ai-action-btn {
+    width: 100%;
+    padding: var(--spacing-md);
+    background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+    border: none;
+    border-radius: var(--radius-md);
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.ai-action-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(139, 92, 246, 0.4);
+}
+
+.ai-action-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.ai-results {
+    margin-top: var(--spacing-md);
+}
+
+.ai-results-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-sm);
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.ai-track-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm);
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: var(--radius-sm);
+    margin-bottom: var(--spacing-xs);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.ai-track-item:hover {
+    background: rgba(255, 255, 255, 0.1);
+    transform: translateX(4px);
+}
+
+.ai-track-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.ai-track-title {
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ai-track-artist {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ai-add-all-btn {
+    width: 100%;
+    padding: var(--spacing-sm);
+    margin-top: var(--spacing-sm);
+    background: rgba(34, 197, 94, 0.2);
+    border: 1px solid rgba(34, 197, 94, 0.3);
+    border-radius: var(--radius-md);
+    color: #22c55e;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.ai-add-all-btn:hover {
+    background: rgba(34, 197, 94, 0.3);
+}
+
+.ai-loading {
+    text-align: center;
+    padding: var(--spacing-lg);
+    color: var(--text-secondary);
+}
+
+.ai-loading::after {
+    content: '';
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--accent);
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-left: var(--spacing-sm);
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
 }

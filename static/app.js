@@ -234,27 +234,8 @@ allTypeBtns.forEach(btn => {
     });
 });
 
-// Sort Filter Toggle
-const sortFilterBtn = $('#sort-filter-btn');
-if (sortFilterBtn) {
-    sortFilterBtn.addEventListener('click', () => {
-        // Toggle sort order
-        state.sortOrder = state.sortOrder === 'newest' ? 'oldest' : 'newest';
-        
-        // Update button text and icon
-        if (state.sortOrder === 'newest') {
-            sortFilterBtn.innerHTML = '<span class="sort-icon">↓</span> Newest';
-        } else {
-            sortFilterBtn.innerHTML = '<span class="sort-icon">↑</span> Oldest';
-        }
-        
-        // Re-render existing results with new sort order (no new API call)
-        if (state.lastSearchResults.length > 0 && 
-            (state.lastSearchType === 'album' || state.lastSearchType === 'podcast')) {
-            renderResults(state.lastSearchResults, state.lastSearchType, false);
-        }
-    });
-}
+// Sort Filter Removed
+
 
 // Crossfade Toggle
 const crossfadeCheckbox = $('#crossfade-checkbox');
@@ -547,13 +528,8 @@ function renderResults(results, type, append = false) {
     
     // For 'podcast' we reuse album card style
     if (type === 'podcast') {
-        // Sort by year (newest first by default)
-        const sorted = [...results].sort((a, b) => {
-            const yearA = parseInt(a.release_date?.slice(0, 4)) || 0;
-            const yearB = parseInt(b.release_date?.slice(0, 4)) || 0;
-            return state.sortOrder === 'newest' ? yearB - yearA : yearA - yearB;
-        });
-        sorted.forEach(item => {
+        // For 'podcast' we reuse album card style
+        results.forEach(item => {
             grid.innerHTML += renderAlbumCard(item);
         });
     } else if (type === 'track') {
@@ -561,13 +537,7 @@ function renderResults(results, type, append = false) {
             grid.innerHTML += renderTrackCard(track);
         });
     } else if (type === 'album') {
-        // Sort by year (newest first by default)
-        const sorted = [...results].sort((a, b) => {
-            const yearA = parseInt(a.release_date?.slice(0, 4)) || 0;
-            const yearB = parseInt(b.release_date?.slice(0, 4)) || 0;
-            return state.sortOrder === 'newest' ? yearB - yearA : yearA - yearB;
-        });
-        sorted.forEach(album => {
+        results.forEach(album => {
             grid.innerHTML += renderAlbumCard(album);
         });
     } else if (type === 'artist') {
@@ -1411,7 +1381,7 @@ downloadModal.addEventListener('click', (e) => {
 
 // ========== KEYBOARD SHORTCUTS ==========
 document.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT') return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     
     switch (e.code) {
         case 'Space':
@@ -1687,41 +1657,15 @@ async function updateFormatBadge(audioSrc) {
         return;
     }
     
-    try {
-        // Use HEAD request to check content-type without downloading
-        const response = await fetch(audioSrc, { method: 'HEAD' });
-        
-        // Check for explicit X-Audio-Format header first (from our backend)
-        const audioFormat = response.headers.get('x-audio-format');
-        const audioQuality = response.headers.get('x-audio-quality'); // Check for Hi-Res
-        const contentType = response.headers.get('content-type') || '';
-        
-        badge.classList.remove('hidden', 'flac', 'mp3', 'hi-res');
-        
-        if (audioQuality === 'Hi-Res') {
-             badge.classList.add('hi-res');
-        }
-        
-        if (audioFormat === 'FLAC' || contentType.includes('flac')) {
-            badge.textContent = 'FLAC';
-            badge.classList.add('flac');
-        } else if (audioFormat === 'MP3' || contentType.includes('mpeg') || contentType.includes('mp3')) {
-            badge.textContent = 'MP3';
-            badge.classList.add('mp3');
-        } else if (contentType.includes('mp4') || contentType.includes('m4a')) {
-            badge.textContent = 'AAC';
-            badge.classList.add('flac'); // Use flac styling for lossless-quality
-        } else if (contentType.includes('webm') || contentType.includes('opus')) {
-            badge.textContent = 'OPUS';
-            badge.classList.add('mp3'); // Use mp3 styling for other lossy
-        } else {
-            badge.textContent = 'AUDIO';
-            badge.classList.add('mp3');
-        }
-    } catch (e) {
-        // On error, just hide badge
-        badge.classList.add('hidden');
+    // OPTIMIZATION: Assume FLAC/Hi-Res by default to avoid double-hitting the stream endpoint with a HEAD request.
+    badge.classList.remove('hidden', 'mp3');
+    badge.classList.add('flac');
+    if (state.hiResMode) {
+        badge.classList.add('hi-res');
+    } else {
+        badge.classList.remove('hi-res');
     }
+    badge.textContent = 'FLAC';
 }
 
 // Player artist/album click handlers for discovery
@@ -2351,7 +2295,7 @@ function escapeHtml(text) {
 
 // ========== KEYBOARD SHORTCUTS ==========
 document.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT') return;
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     
     switch (e.code) {
         case 'Space':
@@ -4761,3 +4705,183 @@ function updateMiniPlayer() {
         waFormat.style.color = (badge.textContent === 'HiFi' || badge.textContent === 'FLAC') ? '#00e000' : '#c0c000';
     }
 }
+
+// ==================== AI ASSISTANT MODAL ====================
+
+const aiModal = document.getElementById('ai-modal');
+const aiModalClose = document.getElementById('ai-modal-close');
+const aiModalOverlay = aiModal?.querySelector('.ai-modal-overlay');
+const aiMenuBtn = document.getElementById('ai-menu-btn');
+
+// Playlist Generator elements
+const aiPlaylistInput = document.getElementById('ai-playlist-input');
+const aiPlaylistGenBtn = document.getElementById('ai-playlist-gen-btn');
+const aiPlaylistResults = document.getElementById('ai-playlist-results');
+const aiDurationSlider = document.getElementById('ai-duration-slider');
+const aiDurationLabel = document.getElementById('ai-duration-label');
+
+// Open/Close Modal
+function openAIModal() {
+    if (aiModal) {
+        aiModal.classList.remove('hidden');
+        aiPlaylistInput?.focus();
+        // Hide menu if open
+        document.getElementById('search-more-menu')?.classList.add('hidden');
+    }
+}
+
+function closeAIModal() {
+    if (aiModal) {
+        aiModal.classList.add('hidden');
+    }
+}
+
+// Event listeners
+aiMenuBtn?.addEventListener('click', openAIModal);
+aiModalClose?.addEventListener('click', closeAIModal);
+aiModalOverlay?.addEventListener('click', closeAIModal);
+
+// Duration slider
+aiDurationSlider?.addEventListener('input', () => {
+    if (aiDurationLabel) {
+        aiDurationLabel.textContent = `${aiDurationSlider.value} min`;
+    }
+});
+
+// Playlist Generator
+aiPlaylistGenBtn?.addEventListener('click', async () => {
+    const description = aiPlaylistInput?.value?.trim();
+    if (!description) return;
+    
+    const duration = parseInt(aiDurationSlider?.value) || 60;
+    
+    aiPlaylistGenBtn.disabled = true;
+    aiPlaylistResults.innerHTML = '<div class="ai-loading">Generating playlist</div>';
+    
+    try {
+        const res = await fetch('/api/ai/generate-playlist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ description, duration_mins: duration })
+        });
+        const data = await res.json();
+        
+        if (data.tracks && data.tracks.length > 0) {
+            let html = `
+                <div class="ai-results-header">
+                    <span>🎵 ${data.playlist_name || 'Generated Playlist'}</span>
+                    <span>${data.tracks.length} tracks</span>
+                </div>
+            `;
+            
+            data.tracks.forEach((track, i) => {
+                html += `
+                    <div class="ai-track-item" data-artist="${escapeHtml(track.artist)}" data-title="${escapeHtml(track.title)}">
+                        <span style="color: var(--text-tertiary); width: 24px;">${i + 1}</span>
+                        <div class="ai-track-info">
+                            <div class="ai-track-title">${escapeHtml(track.title)}</div>
+                            <div class="ai-track-artist">${escapeHtml(track.artist)}</div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            html += '<button class="ai-add-all-btn" id="ai-add-all">➕ Add All to Queue</button>';
+            
+            aiPlaylistResults.innerHTML = html;
+            
+            // Click handler for individual tracks
+            aiPlaylistResults.querySelectorAll('.ai-track-item').forEach(item => {
+                item.addEventListener('click', async () => {
+                    const searchQuery = `${item.dataset.artist} ${item.dataset.title}`;
+                    closeAIModal();
+                    searchInput.value = searchQuery;
+                    await performSearch(searchQuery);
+                });
+            });
+            
+            // Add all button
+            document.getElementById('ai-add-all')?.addEventListener('click', async () => {
+                closeAIModal();
+                const wasEmpty = state.queue.length === 0;
+                // Auto-play if queue was empty OR nothing is currently loaded/playing
+                const shouldAutoPlay = wasEmpty || !state.currentTrack;
+                
+                const tracks = data.tracks;
+                if (tracks.length === 0) return;
+
+                // Helper to search for a track
+                const searchTrack = async (track) => {
+                    try {
+                        const searchRes = await fetch(`/api/search?q=${encodeURIComponent(track.artist + ' ' + track.title)}&type=track&limit=1`);
+                        const searchData = await searchRes.json();
+                        if (searchData.results && searchData.results.length > 0) {
+                            return searchData.results[0];
+                        }
+                    } catch (e) {
+                        console.error('Failed to find track:', track.title);
+                    }
+                    return null;
+                };
+
+                let hasStartedPlaying = false;
+
+                // 1. Process FIRST track immediately for instant playback
+                const firstTrack = tracks[0];
+                const firstResult = await searchTrack(firstTrack);
+                
+                if (firstResult) {
+                    addToQueue(firstResult);
+                    if (shouldAutoPlay) {
+                        playTrack(firstResult);
+                        hasStartedPlaying = true;
+                    }
+                }
+
+                // 2. Process REST in parallel to preserve order but run fast
+                if (tracks.length > 1) {
+                    const restTracks = tracks.slice(1);
+                    // Fetch all in parallel
+                    // Note: If list is huge (e.g. 50+), we might want to batch this. 
+                    // But for typical AI playlists (10-20), Promise.all is fine.
+                    const results = await Promise.all(restTracks.map(t => searchTrack(t)));
+                    
+                    // Add valid results to queue in order
+                    let addedCount = 0;
+                    results.forEach(result => {
+                        if (result) {
+                            addToQueue(result);
+                            addedCount++;
+                            
+                            // Fallback: If first track failed to play/find, play the first valid one we found here
+                            if (shouldAutoPlay && !hasStartedPlaying) {
+                                playTrack(result);
+                                hasStartedPlaying = true;
+                            }
+                        }
+                    });
+                    
+                    if (addedCount > 0) {
+                        showToast(`Added ${addedCount + (firstResult ? 1 : 0)} tracks to queue`);
+                    }
+                }
+            });
+        } else {
+            aiPlaylistResults.innerHTML = '<p style="color: var(--text-secondary);">Could not generate playlist. Try a different description.</p>';
+        }
+    } catch (e) {
+        console.error('Playlist generation error:', e);
+        aiPlaylistResults.innerHTML = '<p style="color: var(--error);">Playlist generation failed. Please try again.</p>';
+    } finally {
+        aiPlaylistGenBtn.disabled = false;
+    }
+});
+
+// Close on Escape
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && aiModal && !aiModal.classList.contains('hidden')) {
+        closeAIModal();
+    }
+});
+
+console.log('AI Assistant module loaded');

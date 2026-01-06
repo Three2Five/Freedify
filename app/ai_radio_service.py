@@ -13,6 +13,7 @@ class AIRadioService:
     """AI-powered radio that generates track recommendations."""
     
     def __init__(self):
+        # Helper for key fallback logic if needed, but primary is env var
         self.api_key = os.environ.get("GEMINI_API_KEY")
         self._genai = None
         self._model = None
@@ -183,6 +184,89 @@ Respond ONLY with valid JSON:
             "vibe_description": "Based on your selection",
             "method": "fallback"
         }
+    
+
+    
+    async def generate_playlist(
+        self,
+        description: str,
+        duration_mins: int = 60,
+        track_count: int = 15
+    ) -> Dict[str, Any]:
+        """
+        Generate a playlist from a natural language description.
+        
+        Args:
+            description: Playlist description like "morning coffee jazz" or "high energy workout"
+            duration_mins: Target duration in minutes
+            track_count: Number of tracks to generate
+            
+        Returns:
+            Dict with tracks (artist + title pairs), playlist name, description
+        """
+        if not self._init_genai() or not self._model:
+            return {
+                "tracks": [],
+                "playlist_name": "Generated Playlist",
+                "description": description,
+                "method": "fallback",
+                "error": "AI not available"
+            }
+        
+        try:
+            import json
+            
+            # Estimate tracks based on duration (avg 3.5 min per track)
+            estimated_tracks = min(max(duration_mins // 4, 5), track_count)
+            
+            prompt = f"""You are a music curator. Create a playlist based on this description.
+
+DESCRIPTION: "{description}"
+TARGET DURATION: ~{duration_mins} minutes ({estimated_tracks} tracks)
+
+TASK: Generate a cohesive playlist that matches the vibe and purpose.
+
+RULES:
+1. Mix popular tracks with quality deep cuts
+2. Consider flow and energy progression
+3. Vary artists while maintaining style consistency
+4. Include specific, real songs (not made-up titles)
+
+Respond ONLY with valid JSON:
+{{
+  "playlist_name": "Creative name for this playlist",
+  "description": "Brief description of the vibe",
+  "tracks": [
+    {{"artist": "Artist Name", "title": "Song Title"}},
+    ...
+  ]
+}}"""
+
+            response = await self._model.generate_content_async(prompt)
+            text = response.text.strip()
+            
+            # Extract JSON
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0].strip()
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0].strip()
+            
+            data = json.loads(text)
+            data["method"] = "ai"
+            data["requested_duration"] = duration_mins
+            
+            logger.info(f"Generated playlist '{data.get('playlist_name')}' with {len(data.get('tracks', []))} tracks")
+            return data
+            
+        except Exception as e:
+            logger.error(f"Playlist generation error: {e}")
+            return {
+                "tracks": [],
+                "playlist_name": "Generated Playlist",
+                "description": description,
+                "method": "fallback",
+                "error": str(e)
+            }
 
 
 # Singleton instance

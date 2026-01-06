@@ -12,8 +12,7 @@ from app.musicbrainz_service import musicbrainz_service
 logger = logging.getLogger(__name__)
 
 # User token from environment (can also be set via frontend settings)
-# TEMP: Remove before committing!
-LISTENBRAINZ_TOKEN = os.getenv("LISTENBRAINZ_TOKEN", "d8845fe9-20b0-4715-a9ba-7ec94810ec9b")
+LISTENBRAINZ_TOKEN = os.getenv("LISTENBRAINZ_TOKEN")
 
 
 class ListenBrainzService:

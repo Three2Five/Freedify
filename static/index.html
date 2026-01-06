@@ -91,13 +91,12 @@
                 <button class="type-btn" data-type="artist">Artists</button>
                 <button class="type-btn" data-type="podcast">Podcasts</button>
                 <button id="search-more-btn" class="type-btn more-btn">⋮ More</button>
-                <button id="sort-filter-btn" class="type-btn sort-btn" title="Sort by Year" style="display: none;">
-                    <span class="sort-icon">↓</span> Newest
-                </button>
             </div>
             
             <!-- Search More Menu -->
             <div id="search-more-menu" class="search-more-menu hidden">
+                <button class="menu-item" id="ai-menu-btn">Smart Playlist</button>
+                <div class="menu-divider"></div>
                 <button class="menu-item type-btn-menu" data-type="ytmusic">YT Music</button>
                 <button class="menu-item type-btn-menu" data-type="setlist">Setlists</button>
                 <button class="menu-item type-btn-menu" data-type="rec">For You</button>
@@ -259,6 +258,32 @@
                     <div id="album-modal-info-tab" class="album-modal-info-tab hidden">
                         <p id="album-modal-description">Album description and additional info...</p>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Assistant Modal -->
+        <div id="ai-modal" class="ai-modal hidden">
+            <div class="ai-modal-overlay"></div>
+            <div class="ai-modal-content">
+                <div class="ai-modal-header">
+                    <h2>🧠 Smart Playlist</h2>
+                    <button id="ai-modal-close" class="ai-modal-close" title="Close">×</button>
+                </div>
+                
+                <!-- Playlist Generator Content -->
+                <div class="ai-tab-content active">
+                    <p class="ai-tab-desc">Describe your perfect playlist and I'll create it...</p>
+                    <textarea id="ai-playlist-input" class="ai-input" placeholder="e.g., 'A 30-minute morning coffee playlist with jazz and bossa nova'" rows="3"></textarea>
+                    
+                    <div class="ai-duration-row">
+                        <label>Duration:</label>
+                        <input type="range" id="ai-duration-slider" min="15" max="120" value="60" step="15">
+                        <span id="ai-duration-label">60 min</span>
+                    </div>
+                    
+                    <button id="ai-playlist-gen-btn" class="ai-action-btn">🎵 Generate Playlist</button>
+                    <div id="ai-playlist-results" class="ai-results"></div>
                 </div>
             </div>
         </div>

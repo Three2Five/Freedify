@@ -826,6 +826,26 @@ async def generate_ai_radio_recommendations(request: AIRadioRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ==================== AI ASSISTANT ENDPOINTS ====================
+
+class GeneratePlaylistRequest(BaseModel):
+    description: str
+    duration_mins: int = 60
+
+@app.post("/api/ai/generate-playlist")
+async def ai_generate_playlist(request: GeneratePlaylistRequest):
+    """Generate a playlist from a natural language description."""
+    try:
+        result = await ai_radio_service.generate_playlist(
+            description=request.description,
+            duration_mins=request.duration_mins
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Playlist generation error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 class BatchDownloadRequest(BaseModel):
     tracks: List[str]  # List of ISRCs or IDs
     names: List[str]   # List of track names for filenames
