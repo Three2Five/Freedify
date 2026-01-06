@@ -1789,6 +1789,26 @@ async function loadTrack(track) {
     // Make sure active player gain is at 1
     if (playerGain) playerGain.gain.value = 1;
     
+    // For ListenBrainz tracks, try to enrich with album art from search
+    if (track.source === 'listenbrainz' && track.album_art === '/static/icon.svg') {
+        try {
+            const searchQuery = track.artists + ' ' + track.name;
+            const searchRes = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}&type=track&limit=1`);
+            const searchData = await searchRes.json();
+            if (searchData.results && searchData.results.length > 0) {
+                const foundTrack = searchData.results[0];
+                if (foundTrack.album_art && foundTrack.album_art !== '/static/icon.svg') {
+                    track.album_art = foundTrack.album_art;
+                    console.log('Enriched LB track with album art:', foundTrack.album_art);
+                    updatePlayerUI(); // Refresh the player bar with new art
+                    updateFullscreenUI(track);
+                }
+            }
+        } catch (e) {
+            console.log('Could not enrich LB track art:', e);
+        }
+    }
+    
     // Play
     if (track.is_local && track.src) {
         player.src = track.src;
@@ -4467,37 +4487,90 @@ async function renderRecommendations() {
         return;
     }
     
-    showLoading('Fetching your music personality...');
+    showLoading('Loading your ListenBrainz playlists...');
     try {
-        const res = await fetch(`/api/listenbrainz/recommendations/${state.listenBrainzConfig.username}`);
-        const data = await res.json();
+        // Fetch playlists first
+        const playlistsRes = await fetch(`/api/listenbrainz/playlists/${state.listenBrainzConfig.username}`);
+        const playlistsData = await playlistsRes.json();
         
         hideLoading();
         
-        if (!data.recommendations || data.recommendations.length === 0) {
-            resultsContainer.innerHTML = `
-                <div class="empty-state">
-                    <div class="empty-icon">⏳</div>
-                    <p class="empty-text">No recommendations yet. Keep listening to music and check back in a week!</p>
+        let html = '';
+        
+        // Show playlists section
+        if (playlistsData.playlists && playlistsData.playlists.length > 0) {
+            html += `
+                <div class="results-header">
+                    <h2>📋 Your ListenBrainz Playlists</h2>
+                    <span class="results-count">${playlistsData.count} playlists</span>
+                </div>
+                <div class="results-grid" id="lb-playlists-grid">
+            `;
+            
+            for (const playlist of playlistsData.playlists) {
+                html += `
+                    <div class="album-card lb-playlist-card" data-id="${playlist.id}">
+                        <div class="album-card-art-container">
+                            <img class="album-card-art" src="/static/icon.svg" alt="${escapeHtml(playlist.name)}" loading="lazy">
+                            <span class="hires-badge" style="background: linear-gradient(135deg, #1db954 0%, #1ed760 100%);">LB</span>
+                        </div>
+                        <div class="album-card-info">
+                            <p class="album-card-title">${escapeHtml(playlist.name)}</p>
+                            <p class="album-card-artist">${escapeHtml(playlist.artists)}</p>
+                            <div class="album-card-meta">
+                                <span>${playlist.total_tracks || '?'} tracks</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+        } else {
+            html += `
+                <div class="results-header">
+                    <h2>📋 Your ListenBrainz Playlists</h2>
+                </div>
+                <div class="empty-state" style="margin-bottom: 24px;">
+                    <div class="empty-icon">📋</div>
+                    <p class="empty-text">No playlists found. Weekly Exploration playlists are generated on Mondays!</p>
                 </div>
             `;
-            return;
         }
         
-        resultsContainer.innerHTML = `
-            <div class="results-header">
-                <h2>✨ Recommended for You</h2>
-                <span class="results-count">${data.count} tracks</span>
-            </div>
-            <div class="tracks-grid">
-                <p style="grid-column: 1/-1; text-align: center; color: var(--text-secondary);">
-                    (Recommendations loaded. Metadata lookup coming in next update.)
-                </p>
-            </div>
-        `;
+        resultsContainer.innerHTML = html;
+        
+        // Attach click handlers for playlist cards
+        resultsContainer.querySelectorAll('.lb-playlist-card').forEach(card => {
+            card.addEventListener('click', async () => {
+                const playlistId = card.dataset.id;
+                await openLBPlaylist(playlistId);
+            });
+        });
+        
     } catch (e) {
         console.error(e);
-        showError('Failed to load recommendations');
+        showError('Failed to load ListenBrainz data');
+    }
+}
+
+// Open a ListenBrainz playlist in detail view
+async function openLBPlaylist(playlistId) {
+    showLoading('Loading playlist tracks...');
+    try {
+        const res = await fetch(`/api/listenbrainz/playlist/${playlistId}`);
+        const playlist = await res.json();
+        
+        if (!res.ok) throw new Error(playlist.detail);
+        
+        hideLoading();
+        console.log('Opening LB playlist:', playlist.name, playlist);
+        
+        // Show in detail view
+        showDetailView(playlist, playlist.tracks || []);
+    } catch (e) {
+        console.error('Failed to load LB playlist:', e);
+        showError('Failed to load playlist');
     }
 }
 

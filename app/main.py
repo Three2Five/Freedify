@@ -1035,6 +1035,20 @@ async def listenbrainz_set_token(token: str):
     username = await listenbrainz_service.validate_token()
     return {"valid": username is not None, "username": username}
 
+@app.get("/api/listenbrainz/playlists/{username}")
+async def listenbrainz_playlists(username: str, count: int = 25):
+    """Get user's ListenBrainz playlists (includes Weekly Exploration)."""
+    playlists = await listenbrainz_service.get_user_playlists(username, count)
+    return {"playlists": playlists, "count": len(playlists)}
+
+@app.get("/api/listenbrainz/playlist/{playlist_id}")
+async def listenbrainz_playlist_tracks(playlist_id: str):
+    """Get tracks from a ListenBrainz playlist."""
+    playlist = await listenbrainz_service.get_playlist_tracks(playlist_id)
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+    return playlist
+
 
 
 @app.get("/api/proxy_image")

@@ -631,6 +631,13 @@ class AudioService:
             except Exception as e:
                 logger.error(f"Deezer track info fetch error: {e}")
         
+        # Handle query: prefixed IDs (from ListenBrainz playlists)
+        # These are searchable by artist + title, no ISRC available
+        if isrc.startswith("query:"):
+            query = isrc.replace("query:", "")
+            isrc = ""  # Clear ISRC, will search by query only
+            logger.info(f"ListenBrainz track - searching by query: {query}")
+        
         
         # 0. Try Dab Music (Qobuz Hi-Res Proxy) - New! Priority #1
         try:
@@ -731,7 +738,7 @@ class AudioService:
                 logger.warning(f"Tidal search returned no results for: {isrc}")
         
         # Fallback to Deezer FLAC download (deezmate API)
-        logger.info(f"Falling back to Deezer for: {isrc}")
+        logger.info(f"Falling back to Deezer for: {isrc or query}")
         
         # If we have cached deezer_info from above, use it; otherwise fetch
         if not deezer_info and isrc.startswith("dz_"):
@@ -742,9 +749,24 @@ class AudioService:
                     deezer_info = response.json()
             except:
                 pass
-        elif not deezer_info:
+        elif not deezer_info and isrc:
             # Lookup by ISRC
             deezer_info = await self.get_deezer_track_info(isrc)
+        elif not deezer_info and query:
+            # No ISRC - search by query (for ListenBrainz tracks)
+            try:
+                response = await self.client.get(
+                    "https://api.deezer.com/search/track",
+                    params={"q": query, "limit": 1}
+                )
+                if response.status_code == 200:
+                    data = response.json()
+                    tracks = data.get("data", [])
+                    if tracks:
+                        deezer_info = tracks[0]
+                        logger.info(f"Deezer search found: {deezer_info.get('title')} by {deezer_info.get('artist', {}).get('name')}")
+            except Exception as e:
+                logger.error(f"Deezer search error: {e}")
         
         if deezer_info and "error" not in deezer_info:
             deezer_id = deezer_info.get("id")

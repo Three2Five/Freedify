@@ -12,7 +12,8 @@ from app.musicbrainz_service import musicbrainz_service
 logger = logging.getLogger(__name__)
 
 # User token from environment (can also be set via frontend settings)
-LISTENBRAINZ_TOKEN = os.getenv("LISTENBRAINZ_TOKEN", "")
+# TEMP: Remove before committing!
+LISTENBRAINZ_TOKEN = os.getenv("LISTENBRAINZ_TOKEN", "d8845fe9-20b0-4715-a9ba-7ec94810ec9b")
 
 
 class ListenBrainzService:
@@ -230,6 +231,125 @@ class ListenBrainzService:
             
         except Exception as e:
             logger.error(f"ListenBrainz token validation error: {e}")
+            return None
+    
+    async def get_user_playlists(self, username: str, count: int = 25) -> List[Dict[str, Any]]:
+        """Get user's playlists from ListenBrainz (includes Weekly Exploration)."""
+        formatted = []
+        
+        # Fetch user-created playlists
+        try:
+            response = await self.client.get(
+                f"{self.API_BASE}/1/user/{username}/playlists",
+                params={"count": count}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                playlists = data.get("playlists", [])
+                formatted.extend(self._format_playlists(playlists, username))
+        except Exception as e:
+            logger.error(f"ListenBrainz user playlists error: {e}")
+        
+        # Fetch "created-for" playlists (Weekly Exploration, Daily Jam, etc.)
+        try:
+            response = await self.client.get(
+                f"{self.API_BASE}/1/user/{username}/playlists/createdfor",
+                params={"count": count}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                playlists = data.get("playlists", [])
+                # Add these at the beginning since they're the most interesting
+                formatted = self._format_playlists(playlists, username, is_generated=True) + formatted
+        except Exception as e:
+            logger.error(f"ListenBrainz created-for playlists error: {e}")
+        
+        return formatted
+    
+    def _format_playlists(self, playlists: list, username: str, is_generated: bool = False) -> List[Dict[str, Any]]:
+        """Format playlist data from ListenBrainz API response."""
+        formatted = []
+        for p in playlists:
+            playlist = p.get("playlist", {})
+            # Extract playlist MBID from identifier URL
+            identifier = playlist.get("identifier", "")
+            playlist_id = identifier.split("/")[-1] if identifier else ""
+            
+            name = playlist.get("title", "Untitled Playlist")
+            
+            formatted.append({
+                "id": f"lb_{playlist_id}",
+                "type": "album",  # Treat as album for UI compatibility
+                "name": name,
+                "artists": playlist.get("creator", username),
+                "description": playlist.get("annotation", "")[:150] if playlist.get("annotation") else "",
+                "album_art": "/static/icon.svg",  # LB playlists don't have artwork
+                "total_tracks": len(playlist.get("track", [])),
+                "source": "listenbrainz",
+                "is_playlist": True,
+                "is_generated": is_generated  # True for Weekly Exploration, Daily Jam, etc.
+            })
+        
+        return formatted
+    
+    async def get_playlist_tracks(self, playlist_id: str) -> Optional[Dict[str, Any]]:
+        """Get tracks from a ListenBrainz playlist."""
+        try:
+            # Remove lb_ prefix if present
+            clean_id = playlist_id.replace("lb_", "")
+            
+            response = await self.client.get(
+                f"{self.API_BASE}/1/playlist/{clean_id}"
+            )
+            
+            if response.status_code != 200:
+                logger.warning(f"ListenBrainz playlist fetch failed: {response.status_code}")
+                return None
+            
+            data = response.json()
+            playlist = data.get("playlist", {})
+            
+            # Parse JSPF tracks
+            jspf_tracks = playlist.get("track", [])
+            tracks = []
+            
+            for i, t in enumerate(jspf_tracks):
+                # Extract artist and title from JSPF
+                artist = t.get("creator", "Unknown Artist")
+                title = t.get("title", "Unknown Track")
+                
+                # Build search query for audio lookup
+                search_query = f"{artist} - {title}"
+                
+                # Create a searchable track object
+                # Use the search query as the track "isrc" so the audio service can find it
+                tracks.append({
+                    "id": f"query:{search_query}",  # This will trigger a search
+                    "type": "track",
+                    "name": title,
+                    "artists": artist,
+                    "album": playlist.get("title", "ListenBrainz Playlist"),
+                    "album_art": "/static/icon.svg",
+                    "duration": "0:00",  # Duration not in JSPF
+                    "isrc": f"query:{search_query}",  # Audio service will search by name
+                    "source": "listenbrainz"
+                })
+            
+            return {
+                "id": f"lb_{clean_id}",
+                "type": "album",
+                "name": playlist.get("title", "ListenBrainz Playlist"),
+                "artists": playlist.get("creator", "ListenBrainz"),
+                "album_art": "/static/icon.svg",
+                "tracks": tracks,
+                "total_tracks": len(tracks),
+                "source": "listenbrainz"
+            }
+            
+        except Exception as e:
+            logger.error(f"ListenBrainz playlist tracks error: {e}")
             return None
     
     async def close(self):
