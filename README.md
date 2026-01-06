@@ -1,8 +1,8 @@
 # Freedify - Music Streaming Web App
 
-*Last updated: January 5, 2026*
+*Last updated: January 6, 2026*
 
-Stream music and podcasts from anywhere. Search songs, albums, artists, podcasts or paste URLs from Spotify, SoundCloud, Bandcamp, Archive.org, Phish.in, and more.
+Stream music and podcasts from anywhere. **Generate smart playlists with AI**, search songs, albums, artists, podcasts or paste URLs from Spotify, SoundCloud, Bandcamp, Archive.org, Phish.in, and more.
 
 ## ✨ Features
 
@@ -23,6 +23,7 @@ Stream music and podcasts from anywhere. Search songs, albums, artists, podcasts
 - **Music Discovery** - Click Artist name to search or Album name to view full tracklist instantly
 
 ### 🧠 AI & Smart Features - Needs Gemini API Key to work
+- **Smart Playlist Generator** - Create custom playlists instantly by describing a vibe, genre, or activity.
 - **AI Radio** - Infinite queue recommendations based on your seed track (prevents genre drift)
 - **DJ Mode** - AI-powered mixing tips (transition technique, timing, key compatibility) - accuracy undetermined
 - **Mix Analysis** - Learn how to mix compatible tracks by Key and BPM
