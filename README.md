@@ -46,14 +46,16 @@ Stream music and podcasts from anywhere. **Generate smart playlists with AI**, s
 ### 🧠 ListenBrainz Integration
 - **Scrobbling** - Automatically tracks what you listen to (triggers after 50% duration or 4 minutes)
 - **Recommendations** - "For You" section (via **More → For You**) offers personalized tracks based on your history
+- **Stats Dashboard** - See your total scrobbles and top artists this week in the For You section
 - **Easy Setup** - Configure via `LISTENBRAINZ_TOKEN` environment variable
 
 ### 🎛️ Player Controls
-- **Volume Control** - Slider + mute button
+- **Volume Control** - Slider + mute button (volume remembered between sessions)
 - **Repeat Modes** - Off / Repeat All / Repeat One
 - **Shuffle** - Shuffle playlist or current queue
 - **Fullscreen Mode** - Click album art to expand
 - **Mini Player** - Pop-out window for always-on-top playback control
+- **Album Art Colors** - Player background tints to match the current album art
 
 ### 🖼️ Pop-out Mini Player
 - **Always-on-Top** - Built with the latest Document Picture-in-Picture API to stay visible over other windows
@@ -75,6 +77,8 @@ Stream music and podcasts from anywhere. **Generate smart playlists with AI**, s
 - **Add All / Shuffle All** - From any album or playlist
 - **Smart Preloading** - Next track buffers automatically for gapless play
 - **Auto-Queue** - Click any track in an album/playlist to queue and play all following tracks automatically
+- **Queue Persistence** - Queue survives page refresh (saved to localStorage)
+- **Volume Memory** - Volume level remembered between sessions
 
 ### Playlists
 - **Add to Playlist** - Click the heart icon on any track to add it to a playlist
@@ -97,8 +101,9 @@ Stream music and podcasts from anywhere. **Generate smart playlists with AI**, s
 
 ### ☁️ Google Drive Sync
 - **Save Tracks** - Save audio directly to your "Freedify" folder
-- **Cross-Device** - Sync playlists across devices
-- **Upload/Download** - Manual sync control
+- **Cross-Device** - Sync playlists AND queue across devices
+- **Multi-Device Resume** - Start listening on one device, continue on another
+- **Upload/Download** - Manual sync control (☁️ button in header)
 - **Privacy** - Uses Drive appDataFolder (hidden from Drive UI)
 
 ### 📱 Mobile Ready

@@ -288,21 +288,29 @@ class ListenBrainzService:
             logger.warning(f"ListenBrainz listen count error: {e}")
         
         try:
-            # Get top artists (this week)
-            response = await self.client.get(
-                f"{self.API_BASE}/1/stats/user/{username}/artists",
-                params={"count": 5, "range": "this_week"}
-            )
-            if response.status_code == 200:
-                data = response.json()
-                artists = data.get("payload", {}).get("artists", [])
-                stats["top_artists"] = [
-                    {
-                        "name": a.get("artist_name", "Unknown"),
-                        "count": a.get("listen_count", 0)
-                    }
-                    for a in artists[:5]
-                ]
+            # Get top artists - try this_week first, fall back to all_time
+            for time_range in ["this_week", "all_time"]:
+                response = await self.client.get(
+                    f"{self.API_BASE}/1/stats/user/{username}/artists",
+                    params={"count": 5, "range": time_range}
+                )
+                logger.info(f"LB stats for {username} ({time_range}): {response.status_code}")
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    artists = data.get("payload", {}).get("artists", [])
+                    if artists:
+                        stats["top_artists"] = [
+                            {
+                                "name": a.get("artist_name", "Unknown"),
+                                "count": a.get("listen_count", 0)
+                            }
+                            for a in artists[:5]
+                        ]
+                        break  # Found artists, stop trying
+                elif response.status_code == 204:
+                    # No content = no stats available yet
+                    logger.info(f"No {time_range} stats available for {username}")
         except Exception as e:
             logger.warning(f"ListenBrainz top artists error: {e}")
         
