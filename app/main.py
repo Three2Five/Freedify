@@ -103,6 +103,14 @@ async def health_check():
     return {"status": "ok", "service": "freedify-streaming"}
 
 
+@app.get("/api/config")
+async def get_config():
+    """Get public configuration for the frontend (like Google Client ID)."""
+    return {
+        "google_client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
+    }
+
+
 @app.get("/api/spotify/made-for-you")
 async def get_spotify_made_for_you():
     """Get Spotify 'Made For You' playlists (Daily Mix, Discover Weekly)."""

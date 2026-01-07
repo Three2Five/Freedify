@@ -3255,14 +3255,30 @@ audioPlayer.addEventListener('timeupdate', () => {
 });
 
 // ========== GOOGLE DRIVE SYNC ==========
-// NOTE: You need to set your Google OAuth Client ID here
-const GOOGLE_CLIENT_ID = localStorage.getItem('freedify_google_client_id') || '';
+// Client ID: fetched from server env var, or from localStorage, or prompted
+let GOOGLE_CLIENT_ID = localStorage.getItem('freedify_google_client_id') || '';
 // Expanded scope: appdata for favorites sync + drive.file for saving audio files
 const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/drive.file';
 const SYNC_FILENAME = 'freedify_playlists.json';
 const FREEDIFY_FOLDER_NAME = 'Freedify';
 
 let googleAccessToken = null;
+
+// Fetch server-side config (Google Client ID from env vars)
+(async function loadServerConfig() {
+    try {
+        const res = await fetch('/api/config');
+        if (res.ok) {
+            const config = await res.json();
+            if (config.google_client_id) {
+                GOOGLE_CLIENT_ID = config.google_client_id;
+                console.log('Google Client ID loaded from server config');
+            }
+        }
+    } catch (e) {
+        console.log('Could not load server config:', e.message);
+    }
+})();
 const syncBtn = $('#sync-btn');
 
 // Initialize Google API
