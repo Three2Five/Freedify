@@ -1666,6 +1666,11 @@ function updatePlayerUI() {
     playerTitle.textContent = track.name;
     playerArtist.textContent = track.artists || '-';
     
+    // Update visualizer info if active (Immersive Mode support)
+    if (visualizerActive && typeof showVisualizerInfoBriefly === 'function') {
+        showVisualizerInfoBriefly();
+    }
+    
     // Album name (clickable to open album)
     if (playerAlbum) {
         playerAlbum.textContent = track.album || '-';
@@ -3648,44 +3653,31 @@ document.addEventListener('keydown', (e) => {
 const hifiBtn = $('#hifi-btn');
 
 // Initialize HiFi button state - reflects actual playing quality, not just preference
+// Initialize HiFi button state - reflects user preference and source limits
 function updateHifiButtonUI() {
     if (hifiBtn) {
         const currentTrack = state.queue[state.currentIndex];
         const source = currentTrack?.source || '';
         
-        // Determine actual quality based on source
-        // Hi-Res (24-bit, cyan): Only Dab/Qobuz with hiResMode ON
-        // HiFi (16-bit, green): Deezer, Jamendo FLAC
-        // Lossy (MP3, dimmed): YouTube, imports, podcasts
-        
-        const isHiResSource = source === 'dab' || source === 'qobuz';
-        const isHiFiSource = source === 'deezer' || source === 'jamendo' || source === 'dab' || source === 'qobuz';
+        // Determine constraint based on source
         const isLossySource = source === 'ytmusic' || source === 'youtube' || source === 'podcast' || source === 'import';
         
-        // Show actual quality, not just user preference
-        const actuallyPlayingHiRes = isHiResSource && state.hiResMode;
-        const actuallyPlayingHiFi = isHiFiSource && !isLossySource;
-        
-        if (actuallyPlayingHiRes) {
-            hifiBtn.classList.add('active', 'hi-res');
-            hifiBtn.classList.remove('lossy');
-            hifiBtn.title = "Playing: Hi-Res 24-bit Audio";
-            hifiBtn.textContent = "Hi-Res";
-        } else if (actuallyPlayingHiFi) {
-            hifiBtn.classList.add('active');
-            hifiBtn.classList.remove('hi-res', 'lossy');
-            hifiBtn.title = "Playing: HiFi 16-bit Lossless";
-            hifiBtn.textContent = "HiFi";
-        } else if (isLossySource) {
+        if (isLossySource) {
+            // Force Lossy display if source is known bad
             hifiBtn.classList.remove('hi-res');
             hifiBtn.classList.add('active', 'lossy');
             hifiBtn.title = "Playing: Compressed Audio (MP3/AAC)";
             hifiBtn.textContent = "MP3";
         } else {
-            // Default/unknown - show user preference
+            // For all other sources (HiFi, Hi-Res, Unknown), reflect the MODE setting
             hifiBtn.classList.add('active');
-            hifiBtn.classList.toggle('hi-res', state.hiResMode);
             hifiBtn.classList.remove('lossy');
+            
+            // Toggle Hi-Res vs HiFi based on state
+            // If state.hiResMode is true -> Add class 'hi-res' -> CSS makes it Cyan/Pulse
+            // If state.hiResMode is false -> Remove class 'hi-res' -> CSS makes it Green
+            hifiBtn.classList.toggle('hi-res', state.hiResMode);
+            
             hifiBtn.title = state.hiResMode ? "Hi-Res Mode ON (24-bit)" : "HiFi Mode ON (16-bit)";
             hifiBtn.textContent = state.hiResMode ? "Hi-Res" : "HiFi";
         }
@@ -5377,6 +5369,9 @@ document.addEventListener('keydown', (e) => {
     
     // P - Add current track to Playlist
     if (e.key.toLowerCase() === 'p') {
+        // Yield to visualizer controls
+        if (visualizerActive && visualizerMode === 'milkdrop') return;
+        
         const currentTrack = state.queue[state.currentIndex];
         if (currentTrack && window.openAddToPlaylistModal) {
             window.openAddToPlaylistModal(currentTrack);
@@ -5586,3 +5581,554 @@ document.addEventListener('keydown', (e) => {
 });
 
 console.log('Lyrics modal loaded');
+
+// ========== MUSIC VIDEO ==========
+const fsVideoBtn = $('#fs-video-btn');
+
+function openMusicVideo() {
+    const track = state.queue[state.currentIndex];
+    if (!track) {
+        showToast('No track playing');
+        return;
+    }
+    
+    const artist = track.artists || '';
+    const title = track.name || '';
+    const query = `${artist} ${title} official music video`;
+    
+    // Open YouTube search in new tab
+    const youtubeUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+    window.open(youtubeUrl, '_blank');
+    
+    showToast('🎬 Opening YouTube...');
+}
+
+// Button handlers
+if (fsVideoBtn) {
+    fsVideoBtn.addEventListener('click', openMusicVideo);
+}
+
+// Also add to more menu video button
+const videoBtn = $('#video-btn');
+if (videoBtn) {
+    videoBtn.addEventListener('click', openMusicVideo);
+}
+
+// V keyboard shortcut for video
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.key.toLowerCase() === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.shiftKey) {
+            e.preventDefault();
+            openVisualizer();
+        } else {
+            openMusicVideo();
+        }
+    }
+});
+
+console.log('Music video feature loaded');
+
+// Concerts feature removed per user request
+
+// ========== AUDIO VISUALIZER ==========
+const visualizerBtn = $('#fs-visualizer-btn');
+const visualizerOverlay = $('#visualizer-overlay');
+const visualizerCanvas = $('#visualizer-canvas');
+const visualizerCanvasWebgl = $('#visualizer-canvas-webgl');
+const visualizerClose = $('#visualizer-close');
+const vizTrackName = $('#viz-track-name');
+const vizTrackArtist = $('#viz-track-artist');
+const vizModeBtns = document.querySelectorAll('.viz-mode-btn');
+
+let visualizerActive = false;
+let visualizerMode = 'bars';
+let vizAnalyser = null;
+let animationId = null;
+let particles = [];
+
+// Butterchurn (MilkDrop) variables
+let butterchurnVisualizer = null;
+let butterchurnPresets = [];
+let butterchurnPresetNames = [];
+let currentPresetIndex = 0;
+
+function initButterchurn() {
+    const bc = window.butterchurn?.default || window.butterchurn;
+    if (butterchurnVisualizer || !bc) {
+        if (!bc) console.error('Butterchurn library not found on window object');
+        return null;
+    }
+    
+    try {
+        const canvas = visualizerCanvasWebgl || visualizerCanvas; // Fallback if element missing
+        butterchurnVisualizer = bc.createVisualizer(
+            audioContext,
+            canvas,
+            {
+                width: canvas.width,
+                height: canvas.height,
+                pixelRatio: window.devicePixelRatio || 1,
+                textureRatio: 1
+            }
+        );
+        
+        // Load presets
+        let presets = window.butterchurnPresets?.default || window.butterchurnPresets;
+        if (presets) {
+            // Check if it's a module with getPresets
+            if (typeof presets.getPresets === 'function') {
+                presets = presets.getPresets();
+            }
+            
+            butterchurnPresets = presets;
+            butterchurnPresetNames = Object.keys(butterchurnPresets);
+            console.log(`Loaded ${butterchurnPresetNames.length} MilkDrop presets`);
+            
+            // Load a random preset to start
+            if (butterchurnPresetNames.length > 0) {
+                currentPresetIndex = Math.floor(Math.random() * butterchurnPresetNames.length);
+                loadButterchurnPreset(currentPresetIndex);
+            }
+        }
+        
+        // Connect to audio
+        butterchurnVisualizer.connectAudio(vizAnalyser || volumeBoostGain);
+        
+        console.log('Butterchurn initialized');
+        return butterchurnVisualizer;
+    } catch (e) {
+        console.error('Failed to init Butterchurn:', e);
+        return null;
+    }
+}
+
+function loadButterchurnPreset(index) {
+    if (!butterchurnVisualizer || butterchurnPresetNames.length === 0) return;
+    
+    // Ensure index is valid
+    if (index < 0) index = butterchurnPresetNames.length - 1;
+    if (index >= butterchurnPresetNames.length) index = 0;
+    currentPresetIndex = index;
+    
+    const presetName = butterchurnPresetNames[index];
+    const preset = butterchurnPresets[presetName];
+    
+    console.log(`Loading preset [${index}]: ${presetName}`, preset ? 'found' : 'missing');
+    
+    if (preset) {
+        try {
+            butterchurnVisualizer.loadPreset(preset, 1.0); // 1.0 = blend time
+            showToast(`🎆 ${presetName}`);
+        } catch (err) {
+            console.error('Error loading preset:', err);
+        }
+    }
+}
+
+function nextButterchurnPreset() {
+    console.log('Next preset clicked');
+    loadButterchurnPreset(currentPresetIndex + 1);
+}
+
+function prevButterchurnPreset() {
+    console.log('Prev preset clicked');
+    loadButterchurnPreset(currentPresetIndex - 1);
+}
+
+function randomButterchurnPreset() {
+    currentPresetIndex = Math.floor(Math.random() * butterchurnPresetNames.length);
+    loadButterchurnPreset(currentPresetIndex);
+}
+
+function initVisualizerAnalyser() {
+    if (vizAnalyser) return;
+    
+    // We need to use the existing audioContext from the equalizer
+    // First ensure EQ is initialized (which creates the audioContext)
+    if (!audioContext) {
+        initEqualizer();
+    }
+    
+    if (!audioContext) {
+        console.error('No audio context available for visualizer');
+        return;
+    }
+    
+    try {
+        // Create analyser and connect it to the audio chain
+        vizAnalyser = audioContext.createAnalyser();
+        vizAnalyser.fftSize = 256;
+        vizAnalyser.smoothingTimeConstant = 0.8;
+        
+        // Connect the volumeBoostGain to the analyser, then analyser to destination
+        // We need to disconnect volumeBoostGain from destination first
+        // Actually, let's just connect analyser in parallel to monitor the output
+        if (volumeBoostGain) {
+            volumeBoostGain.connect(vizAnalyser);
+        } else {
+            // If no EQ chain, try direct connection (fallback)
+            console.warn('No volumeBoostGain, visualizer may not work well');
+        }
+        
+        console.log('Visualizer analyser connected to audio chain');
+    } catch (e) {
+        console.error('Failed to init visualizer analyser:', e);
+    }
+}
+
+function drawBars(ctx, dataArray, width, height) {
+    const barCount = 64;
+    const barWidth = width / barCount - 2;
+    const gradient = ctx.createLinearGradient(0, height, 0, 0);
+    gradient.addColorStop(0, '#ec4899');
+    gradient.addColorStop(0.5, '#f59e0b');
+    gradient.addColorStop(1, '#10b981');
+    
+    for (let i = 0; i < barCount; i++) {
+        const barHeight = (dataArray[i] / 255) * height * 0.8;
+        const x = i * (barWidth + 2);
+        
+        ctx.fillStyle = gradient;
+        ctx.fillRect(x, height - barHeight, barWidth, barHeight);
+        
+        // Mirror reflection
+        ctx.globalAlpha = 0.3;
+        ctx.fillRect(x, height, barWidth, barHeight * 0.3);
+        ctx.globalAlpha = 1;
+    }
+}
+
+function drawWave(ctx, dataArray, width, height) {
+    ctx.beginPath();
+    ctx.strokeStyle = '#ec4899';
+    ctx.lineWidth = 3;
+    
+    const sliceWidth = width / dataArray.length;
+    let x = 0;
+    
+    for (let i = 0; i < dataArray.length; i++) {
+        const v = dataArray[i] / 255;
+        const y = v * height;
+        
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+        x += sliceWidth;
+    }
+    
+    ctx.stroke();
+    
+    // Draw mirrored wave
+    ctx.beginPath();
+    ctx.strokeStyle = '#f59e0b';
+    ctx.globalAlpha = 0.5;
+    x = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+        const v = dataArray[i] / 255;
+        const y = height - (v * height);
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+        x += sliceWidth;
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+}
+
+
+
+function drawParticles(ctx, dataArray, width, height) {
+    // Spawn new particles based on audio intensity
+    const avgIntensity = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+    
+    if (avgIntensity > 100 && particles.length < 200) {
+        for (let i = 0; i < 3; i++) {
+            particles.push({
+                x: Math.random() * width,
+                y: height + 10,
+                vx: (Math.random() - 0.5) * 4,
+                vy: -(Math.random() * 5 + 2),
+                size: Math.random() * 6 + 2,
+                color: `hsl(${Math.random() * 60 + 300}, 100%, 60%)`,
+                life: 1
+            });
+        }
+    }
+    
+    // Update and draw particles
+    particles = particles.filter(p => p.life > 0);
+    for (const p of particles) {
+        p.x += p.vx;
+        p.y += p.vy;
+        p.vy += 0.02; // Gravity
+        p.life -= 0.01;
+        
+        ctx.beginPath();
+        const radius = Math.max(0, p.size * p.life);
+        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.life;
+        ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+}
+
+function renderVisualizer() {
+    if (!visualizerActive || !vizAnalyser) return;
+    
+    const canvas = visualizerCanvas;
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Get frequency data
+    const bufferLength = vizAnalyser.frequencyBinCount;
+    const dataArray = new Uint8Array(bufferLength);
+    vizAnalyser.getByteFrequencyData(dataArray);
+    
+    // Clear canvas with fade effect
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+    ctx.fillRect(0, 0, width, height);
+    
+    // Draw based on mode
+    switch (visualizerMode) {
+        case 'milkdrop':
+            // Butterchurn handles its own rendering
+            if (butterchurnVisualizer) {
+                butterchurnVisualizer.render();
+            }
+            break;
+        case 'bars':
+            drawBars(ctx, dataArray, width, height);
+            break;
+        case 'wave':
+            drawWave(ctx, dataArray, width, height);
+            break;
+
+        case 'particles':
+            drawParticles(ctx, dataArray, width, height);
+            break;
+    }
+    
+    animationId = requestAnimationFrame(renderVisualizer);
+}
+
+// Visualizer Idle State
+let visualizerIdleTimer = null;
+let vizInfoBriefTimer = null;
+let visualizerListenersAttached = false;
+
+function resetVisualizerIdleTimer() {
+    if (!visualizerActive) return;
+    
+    // Remove idle class (show UI)
+    visualizerOverlay.classList.remove('user-idle');
+    
+    // Clear existing timer
+    if (visualizerIdleTimer) clearTimeout(visualizerIdleTimer);
+    
+    // Set new timer (10s)
+    visualizerIdleTimer = setTimeout(() => {
+        if (visualizerActive) {
+            visualizerOverlay.classList.add('user-idle');
+        }
+    }, 10000);
+}
+
+function showVisualizerInfoBriefly() {
+    if (!visualizerActive) return;
+    
+    // Ensure info is updated
+    const track = state.queue[state.currentIndex];
+    if (track) {
+        vizTrackName.textContent = track.name || 'Unknown Track';
+        vizTrackArtist.textContent = track.artists || '';
+    }
+
+    // Add temp-visible class
+    const info = document.querySelector('.visualizer-track-info');
+    if (info) {
+        info.classList.add('temp-visible');
+        
+        if (vizInfoBriefTimer) clearTimeout(vizInfoBriefTimer);
+        
+        vizInfoBriefTimer = setTimeout(() => {
+            info.classList.remove('temp-visible');
+        }, 15000); // 15s
+    }
+}
+
+function initVisualizerIdleState() {
+    if (visualizerListenersAttached) return;
+    
+    const events = ['mousemove', 'mousedown', 'click', 'keydown', 'touchstart'];
+    events.forEach(event => {
+        document.addEventListener(event, resetVisualizerIdleTimer);
+    });
+    
+    visualizerListenersAttached = true;
+    resetVisualizerIdleTimer();
+}
+
+function openVisualizer() {
+    const track = state.queue[state.currentIndex];
+    if (!track) {
+        showToast('Play a track first');
+        return;
+    }
+    
+    // Initialize visualizer analyser (uses existing audioContext from EQ)
+    initVisualizerAnalyser();
+    if (audioContext?.state === 'suspended') {
+        audioContext.resume();
+    }
+    
+    // Init idle state
+    initVisualizerIdleState();
+    visualizerOverlay.classList.remove('user-idle');
+    
+    // Update track info
+    vizTrackName.textContent = track.name || 'Unknown Track';
+    vizTrackArtist.textContent = track.artists || '';
+    
+    // Set canvas size
+    visualizerCanvas.width = window.innerWidth;
+    visualizerCanvas.height = window.innerHeight;
+    if (visualizerCanvasWebgl) {
+        visualizerCanvasWebgl.width = window.innerWidth;
+        visualizerCanvasWebgl.height = window.innerHeight;
+    }
+    
+    // Initial visibility
+    if (visualizerMode === 'milkdrop') {
+        if (!butterchurnVisualizer) initButterchurn();
+        visualizerCanvasWebgl?.classList.remove('hidden');
+        visualizerCanvas?.classList.add('hidden');
+    } else {
+        visualizerCanvasWebgl?.classList.add('hidden');
+        visualizerCanvas?.classList.remove('hidden');
+    }
+    
+    // Show overlay
+    visualizerOverlay.classList.remove('hidden');
+    visualizerActive = true;
+    
+    // Start rendering
+    renderVisualizer();
+}
+
+function closeVisualizer() {
+    visualizerActive = false;
+    visualizerOverlay.classList.add('hidden');
+    
+    if (animationId) {
+        cancelAnimationFrame(animationId);
+        animationId = null;
+    }
+}
+
+// Button handlers
+if (visualizerBtn) {
+    visualizerBtn.addEventListener('click', openVisualizer);
+}
+// Also add to more menu visualizer button
+const menuVisualizerBtn = $('#menu-visualizer-btn');
+if (menuVisualizerBtn) {
+    menuVisualizerBtn.addEventListener('click', openVisualizer);
+}
+
+if (visualizerClose) {
+    visualizerClose.addEventListener('click', closeVisualizer);
+}
+
+// Close on ESC
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && visualizerActive) {
+        closeVisualizer();
+    }
+    
+    // N for Next Preset (MilkDrop)
+    if ((e.key === 'n' || e.key === 'N') && visualizerActive && visualizerMode === 'milkdrop') {
+        nextButterchurnPreset();
+    }
+    
+    // P for Prev Preset (MilkDrop)
+    if ((e.key === 'p' || e.key === 'P') && visualizerActive && visualizerMode === 'milkdrop') {
+        prevButterchurnPreset();
+    }
+});
+
+// Mode switching
+vizModeBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+        // Toggle preset button visibility
+        const isMilkDrop = btn.dataset.mode === 'milkdrop';
+        const nextPresetBtn = document.getElementById('viz-next-preset');
+        const prevPresetBtn = document.getElementById('viz-prev-preset');
+        
+        if (nextPresetBtn) nextPresetBtn.style.display = isMilkDrop ? 'block' : 'none';
+        if (prevPresetBtn) prevPresetBtn.style.display = isMilkDrop ? 'block' : 'none';
+        
+        // Handle normal mode switching
+        if (!btn.id || (btn.id !== 'viz-next-preset' && btn.id !== 'viz-prev-preset')) {
+            vizModeBtns.forEach(b => {
+                if (b.id !== 'viz-next-preset' && b.id !== 'viz-prev-preset') b.classList.remove('active');
+            });
+            btn.classList.add('active');
+            visualizerMode = btn.dataset.mode;
+            particles = []; // Clear particles when switching modes
+            
+            // Init Butterchurn if needed
+            if (visualizerMode === 'milkdrop') {
+                if (!butterchurnVisualizer) initButterchurn();
+                // Toggle canvases
+                if (visualizerCanvasWebgl) {
+                    visualizerCanvasWebgl.classList.remove('hidden');
+                    visualizerCanvas.classList.add('hidden');
+                }
+            } else {
+                // Toggle canvases
+                if (visualizerCanvasWebgl) {
+                    visualizerCanvasWebgl.classList.add('hidden');
+                    visualizerCanvas.classList.remove('hidden');
+                }
+            }
+        }
+    });
+});
+
+const vizNextPresetBtn = document.getElementById('viz-next-preset');
+if (vizNextPresetBtn) {
+    vizNextPresetBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        nextButterchurnPreset();
+    });
+}
+const vizPrevPresetBtn = document.getElementById('viz-prev-preset');
+if (vizPrevPresetBtn) {
+    vizPrevPresetBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        prevButterchurnPreset();
+    });
+}
+
+// Handle window resize
+window.addEventListener('resize', () => {
+    if (visualizerActive) {
+        visualizerCanvas.width = window.innerWidth;
+        visualizerCanvas.height = window.innerHeight;
+        
+        if (visualizerCanvasWebgl) {
+            visualizerCanvasWebgl.width = window.innerWidth;
+            visualizerCanvasWebgl.height = window.innerHeight;
+        }
+        
+        if (butterchurnVisualizer) {
+            butterchurnVisualizer.setRendererSize(window.innerWidth, window.innerHeight);
+        }
+    }
+});
+
+console.log('Audio visualizer loaded');

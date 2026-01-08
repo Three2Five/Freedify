@@ -2035,6 +2035,32 @@ body {
     display: block;
 }
 
+.fs-art-lyrics-btn {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: white;
+    font-size: 1.3rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    opacity: 0.8;
+}
+
+.fs-art-lyrics-btn:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.8);
+    transform: scale(1.1);
+}
+
 .fs-info h2 {
     font-size: 1.6rem;
     font-weight: 700;
@@ -3441,18 +3467,22 @@ body {
 
 /* ==================== Mobile Player Bar Optimization ==================== */
 
-/* Ensure More Menu uses 5-column Grid (2x5 layout for 10 buttons) */
+/* Ensure More Menu uses 4-column Grid (4x3 layout for 12 buttons) */
 .more-menu-grid {
     display: grid !important;
-    grid-template-columns: repeat(5, 1fr) !important;
+    grid-template-columns: repeat(4, 1fr) !important;
     gap: 8px !important;
     padding: 8px;
 }
 
-/* Adjust menu width for 5 columns */
+.more-menu-grid.four-col {
+    grid-template-columns: repeat(4, 1fr) !important;
+}
+
+/* Adjust menu width for 4 columns */
 .player-more-menu {
     width: auto !important;
-    min-width: 260px;
+    min-width: 220px;
 }
 
 /* Mobile Layout Changes */
@@ -4045,12 +4075,34 @@ body {
     transform: translateX(20px);
 }
 
-/* Hi-Res Button Style (Cyan) */
-#hifi-btn.hi-res {
-    background: linear-gradient(135deg, #00f2ff, #00c3ff) !important;
-    color: #000 !important;
-    box-shadow: 0 0 15px rgba(0, 242, 255, 0.4);
+/* CSS Overrides for HiFi Button logic */
+
+/* 16-bit HiFi: Green, active, NO pulse */
+/* 16-bit HiFi: Green, active, NO pulse */
+#hifi-btn.active:not(.hi-res) {
+    background: linear-gradient(135deg, #10b981, #059669) !important;
+    color: white !important;
+    animation: none !important; /* Stop generic pulse */
+    box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
     border: none;
+}
+#hifi-btn.active:not(.hi-res):hover {
+    box-shadow: 0 0 15px rgba(16, 185, 129, 0.6);
+    transform: scale(1.05);
+}
+
+/* 24-bit Hi-Res: Cyan, active, WITH pulse */
+#hifi-btn.active.hi-res {
+    background: linear-gradient(135deg, #00f2ff, #00c3ff) !important;
+    color: #000 !important; /* Black text for contrast on bright cyan */
+    box-shadow: 0 0 15px rgba(0, 242, 255, 0.4);
+    animation: hifi-pulse 1.5s infinite !important; /* Force pulse */
+    border: none;
+}
+
+#hifi-btn.active.hi-res:hover {
+    box-shadow: 0 0 20px rgba(0, 242, 255, 0.6);
+    transform: scale(1.05);
 }
 
 #hifi-btn.hi-res:hover {
@@ -4756,5 +4808,464 @@ body {
     
     .lyrics-modal-info h2 {
         font-size: 1rem;
+    }
+}
+
+/* ==================== Concerts Modal ==================== */
+
+.concerts-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    animation: fadeIn 0.2s ease;
+}
+
+.concerts-modal-content {
+    background: var(--bg-secondary);
+    border-radius: 16px;
+    max-width: 650px;
+    width: 100%;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.concerts-modal-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: var(--bg-tertiary);
+    border: none;
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 10;
+    transition: all 0.2s;
+}
+
+.concerts-modal-close:hover {
+    background: var(--accent-color);
+    transform: scale(1.1);
+}
+
+.concerts-modal-header {
+    padding: 20px;
+    border-bottom: 1px solid var(--bg-tertiary);
+}
+
+.concerts-modal-header h2 {
+    margin: 0;
+    font-size: 1.3rem;
+}
+
+.concerts-settings {
+    padding: 16px 20px;
+    background: var(--bg-tertiary);
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.concerts-settings label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.concerts-cities-input {
+    flex: 1;
+    min-width: 200px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--bg-tertiary);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.concerts-save-btn {
+    padding: 8px 16px;
+    background: var(--accent-color);
+    border: none;
+    border-radius: 6px;
+    color: white;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.concerts-save-btn:hover {
+    filter: brightness(1.1);
+}
+
+.concerts-tabs {
+    display: flex;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--bg-tertiary);
+}
+
+.concerts-tab {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 12px 20px;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s;
+}
+
+.concerts-tab:hover {
+    color: var(--text-primary);
+}
+
+.concerts-tab.active {
+    color: var(--accent-color);
+}
+
+.concerts-tab.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: var(--accent-color);
+}
+
+.concerts-search-section {
+    padding: 12px 20px;
+    display: flex;
+    gap: 10px;
+}
+
+.concerts-artist-input {
+    flex: 1;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--bg-tertiary);
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.95rem;
+}
+
+.concerts-search-btn {
+    padding: 10px 16px;
+    background: var(--accent-color);
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1rem;
+}
+
+.concerts-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.concert-card {
+    background: var(--bg-tertiary);
+    border-radius: 10px;
+    padding: 16px;
+    display: flex;
+    gap: 16px;
+    align-items: flex-start;
+    transition: all 0.2s;
+}
+
+.concert-card:hover {
+    background: var(--bg-hover);
+}
+
+.concert-date {
+    background: var(--accent-color);
+    color: white;
+    border-radius: 8px;
+    padding: 10px 14px;
+    text-align: center;
+    min-width: 60px;
+}
+
+.concert-date-month {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.concert-date-day {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.concert-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.concert-artist {
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.concert-venue {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+.concert-location {
+    font-size: 0.85rem;
+    color: var(--text-tertiary);
+}
+
+.concert-ticket-btn {
+    padding: 8px 16px;
+    background: linear-gradient(135deg, var(--accent-color), #f59e0b);
+    border: none;
+    border-radius: 20px;
+    color: white;
+    font-weight: 600;
+    font-size: 0.8rem;
+    cursor: pointer;
+    text-decoration: none;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.concert-ticket-btn:hover {
+    transform: scale(1.05);
+    filter: brightness(1.1);
+}
+
+.concerts-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-secondary);
+}
+
+.concerts-empty-hint {
+    font-size: 0.85rem;
+    color: var(--text-tertiary);
+    margin-top: 8px;
+}
+
+@media (max-width: 500px) {
+    .concerts-settings {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .concert-card {
+        flex-direction: column;
+    }
+    
+    .concert-date {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+}
+
+/* ==================== Audio Visualizer ==================== */
+
+.visualizer-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #000;
+    z-index: 100000;
+    cursor: default;
+}
+
+.visualizer-overlay.hidden {
+    display: none;
+}
+
+#visualizer-canvas,
+#visualizer-canvas-webgl {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+.visualizer-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 20px 30px;
+    background: linear-gradient(transparent, rgba(0,0,0,0.8));
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    opacity: 1;
+    transition: opacity 0.5s, background 0.5s;
+}
+
+/* Base idle state: controls fade out */
+.visualizer-overlay.user-idle .visualizer-controls {
+    opacity: 1; /* Keep container 'visible' for child management, but fade bg */
+    background: transparent;
+    pointer-events: none;
+}
+
+/* Hide specific elements when idle */
+.visualizer-overlay.user-idle .visualizer-mode-selector,
+.visualizer-overlay.user-idle .visualizer-close-btn,
+.visualizer-overlay.user-idle .visualizer-hint {
+    opacity: 0;
+    transition: opacity 0.5s;
+}
+
+/* Track info - possibly visible */
+.visualizer-track-info {
+    transition: opacity 0.5s;
+    opacity: 1;
+}
+
+.visualizer-overlay.user-idle .visualizer-track-info {
+    opacity: 0;
+}
+
+.visualizer-overlay.user-idle .visualizer-track-info.temp-visible {
+    opacity: 1;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
+}
+
+.visualizer-track-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#viz-track-name {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: white;
+}
+
+#viz-track-artist {
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.7);
+}
+
+.visualizer-mode-selector {
+    display: flex;
+    gap: 8px;
+}
+
+.viz-mode-btn {
+    padding: 8px 16px;
+    border: 1px solid rgba(255,255,255,0.3);
+    background: rgba(255,255,255,0.1);
+    color: white;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.viz-mode-btn:hover {
+    background: rgba(255,255,255,0.2);
+}
+
+.viz-mode-btn.active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+}
+
+.viz-action-btn {
+    padding: 8px 16px;
+    border: 1px solid rgba(255,255,255,0.3);
+    background: rgba(16, 185, 129, 0.2); /* distinct green tint */
+    color: white;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.viz-action-btn:hover {
+    background: rgba(16, 185, 129, 0.4);
+    transform: scale(1.05);
+}
+
+.visualizer-close-btn {
+    padding: 10px 20px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.3);
+    color: white;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+}
+
+.visualizer-close-btn:hover {
+    background: rgba(255,0,0,0.5);
+    border-color: rgba(255,0,0,0.7);
+}
+
+.visualizer-hint {
+    position: absolute;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.4);
+    font-size: 0.8rem;
+    opacity: 1;
+    transition: opacity 0.3s;
+}
+
+@media (max-width: 768px) {
+    .visualizer-controls {
+        flex-direction: column;
+        gap: 15px;
+        padding-bottom: 40px; /* More space for exit button */
+        height: auto;
+        justify-content: flex-end;
+    }
+    
+    .visualizer-mode-selector {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+    
+    .visualizer-track-info {
+        text-align: center;
+        margin-bottom: 10px;
+    }
+    
+    .visualizer-close-btn {
+        width: 100%;
+        max-width: 200px;
     }
 }

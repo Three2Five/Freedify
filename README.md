@@ -71,6 +71,18 @@ Stream music and podcasts from anywhere. **Generate smart playlists with AI**, s
 - **Retro Aesthetic** - Winamp-inspired classic display for a nostalgic feel
 - **Automatic Sync** - Seamlessly stays in sync with the main player state
 
+### 🎬 Music Videos
+- **Quick Access** - Press **V** or click 🎬 in fullscreen to find official music video
+- **YouTube Search** - Opens YouTube with optimized search for official video
+
+
+### 🌈 Audio Visualizer
+- **Fullscreen Overlay** - Click 🌈 in "More" menu or `Alt+V`
+- **MilkDrop Integration** - Powered by Butterchurn with hundreds of psychedelic presets
+- **Next Preset** - Cycle through visuals with button or `N` key
+- **Basic Modes** - Bars, Wave, Circular, and Particles
+- **Audio-Reactive** - Responds to frequency data in real-time
+
 ### 💾 Download & Save
 - **Save to Drive** - Direct save to Google Drive (FLAC/AIFF/MP3)
 - **Single Tracks** - Download locally as Artist - Song.ext
@@ -135,11 +147,15 @@ Stream music and podcasts from anywhere. **Generate smart playlists with AI**, s
 | F | Toggle fullscreen |
 | Q | Toggle queue |
 | E | Toggle EQ |
-| P | Add to Playlist |
+| P | Add to Playlist (Global) / Prev Preset (Visualizer) |
 | H | Toggle HiFi/Hi-Res |
 | D | Download current track |
 | A | Toggle AI Radio |
 | L | Open Lyrics |
+| V | Find Music Video |
+| Shift+V | Toggle Visualizer |
+| N | Next Preset (Visualizer) |
+| ESC | Exit Visualizer |
 | Shift+S | Sync to Drive |
 | ? | Show shortcuts help |
 

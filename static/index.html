@@ -17,6 +17,9 @@
     <!-- Google API for Drive sync -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://apis.google.com/js/api.js" async defer></script>
+    <!-- Butterchurn (MilkDrop WebGL visualizer) -->
+    <script src="https://cdn.jsdelivr.net/npm/butterchurn@2.6.7/lib/butterchurn.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/butterchurn-presets@2.4.7/lib/butterchurnPresets.min.js"></script>
 </head>
 <body>
     <!-- Toast Container -->
@@ -48,6 +51,7 @@
                 <div class="shortcut"><kbd>D</kbd><span>Download Track</span></div>
                 <div class="shortcut"><kbd>A</kbd><span>AI Radio</span></div>
                 <div class="shortcut"><kbd>L</kbd><span>Lyrics</span></div>
+                <div class="shortcut"><kbd>V</kbd><span>Music Video</span></div>
                 <div class="shortcut"><kbd>Shift + S</kbd><span>Sync to Drive</span></div>
                 <div class="shortcut"><kbd>?</kbd><span>This Help</span></div>
             </div>
@@ -331,19 +335,22 @@
             
             <!-- More Menu (Popup) - 2x5 Grid -->
             <div id="player-more-menu" class="player-more-menu hidden">
-                <div class="more-menu-grid">
+                <div class="more-menu-grid four-col">
                     <!-- Row 1 -->
                     <button id="shuffle-queue-btn" class="control-btn" title="Shuffle Queue">⤭</button>
                     <button id="repeat-btn" class="control-btn" title="Repeat: Off">⟳</button>
                     <button id="download-current-btn" class="control-btn" title="Download">⬇</button>
                     <button id="queue-btn" class="control-btn queue-toggle" title="Queue">☰</button>
-                    <button id="mute-btn" class="control-btn volume-btn" title="Mute">🔊</button>
                     <!-- Row 2 -->
+                    <button id="mute-btn" class="control-btn volume-btn" title="Mute">🔊</button>
                     <button id="eq-toggle-btn" class="control-btn eq-btn" title="Equalizer">🎛️</button>
                     <button id="ai-radio-btn" class="control-btn ai-radio-btn" title="AI Radio">📻</button>
                     <button id="mini-player-btn" class="control-btn" title="Popout Winamp Player">⧉</button>
+                    <!-- Row 3 -->
                     <button id="add-to-playlist-btn" class="control-btn" title="Add to Playlist">🩷</button>
                     <button id="lyrics-btn" class="control-btn lyrics-btn" title="Lyrics">📝</button>
+                    <button id="video-btn" class="control-btn" title="Music Video">🎬</button>
+                    <button id="menu-visualizer-btn" class="control-btn" title="Visualizer">🌈</button>
                 </div>
                 <!-- Volume slider inside menu for mobile compactness -->
                 <div class="more-menu-volume">
@@ -417,6 +424,7 @@
             </div>
             <div class="fs-art-container">
                 <img id="fs-art" src="/static/icon.svg" alt="Album Art">
+                <button id="fs-lyrics-btn" class="fs-art-lyrics-btn" title="Lyrics">📝</button>
             </div>
             <div class="fs-info">
                 <h2 id="fs-title">No Track Playing</h2>
@@ -434,9 +442,31 @@
                 <button id="fs-play-btn" class="fs-control-btn play-btn">▶</button>
                 <button id="fs-next-btn" class="fs-control-btn">⏭</button>
                 <button id="fs-download-btn" class="fs-control-btn" title="Download">⬇</button>
-                <button id="fs-lyrics-btn" class="fs-control-btn" title="Lyrics">📝</button>
+                <button id="fs-visualizer-btn" class="fs-control-btn" title="Visualizer">🌈</button>
             </div>
         </div>
+    </div>
+
+    <!-- Visualizer Overlay -->
+    <div id="visualizer-overlay" class="visualizer-overlay hidden">
+        <canvas id="visualizer-canvas"></canvas>
+        <canvas id="visualizer-canvas-webgl" class="hidden"></canvas>
+        <div class="visualizer-controls">
+            <div class="visualizer-track-info">
+                <span id="viz-track-name">No Track</span>
+                <span id="viz-track-artist"></span>
+            </div>
+            <div class="visualizer-mode-selector">
+                <button id="viz-prev-preset" class="viz-action-btn" title="Previous Preset (P)" style="display: none;">⏮ Prev</button>
+                <button class="viz-mode-btn" data-mode="milkdrop">MilkDrop</button>
+                <button id="viz-next-preset" class="viz-action-btn" title="Next Preset (N)" style="display: none;">Next ⏭</button>
+                <button class="viz-mode-btn active" data-mode="bars">Bars</button>
+                <button class="viz-mode-btn" data-mode="wave">Wave</button>
+                <button class="viz-mode-btn" data-mode="particles">Particles</button>
+            </div>
+            <button id="visualizer-close" class="visualizer-close-btn">✕ Exit</button>
+        </div>
+        <div class="visualizer-hint">Press ESC or click to exit</div>
     </div>
 
     <!-- Podcast Episode Details Modal -->
@@ -504,6 +534,38 @@
                         <p>No annotations available for this track</p>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Concerts Modal -->
+    <div id="concerts-modal" class="concerts-modal hidden">
+        <div class="concerts-modal-content">
+            <button id="concerts-modal-close" class="concerts-modal-close">×</button>
+            <div class="concerts-modal-header">
+                <h2>🎤 Upcoming Concerts</h2>
+            </div>
+            <div class="concerts-settings">
+                <label>My Cities (comma-separated):</label>
+                <input type="text" id="concerts-cities" class="concerts-cities-input" placeholder="San Francisco, Los Angeles, Seattle...">
+                <button id="concerts-save-cities" class="concerts-save-btn">Save</button>
+            </div>
+            <div class="concerts-tabs">
+                <button class="concerts-tab active" data-source="queue">From Queue</button>
+                <button class="concerts-tab" data-source="search">Search Artist</button>
+            </div>
+            <div id="concerts-search-section" class="concerts-search-section hidden">
+                <input type="text" id="concerts-artist-search" class="concerts-artist-input" placeholder="Search artist...">
+                <button id="concerts-search-btn" class="concerts-search-btn">🔍</button>
+            </div>
+            <div id="concerts-loading" class="lyrics-loading hidden">
+                <div class="lyrics-spinner"></div>
+                <p>Finding concerts...</p>
+            </div>
+            <div id="concerts-list" class="concerts-list"></div>
+            <div id="concerts-empty" class="concerts-empty hidden">
+                <p>No upcoming concerts found</p>
+                <p class="concerts-empty-hint">Try adding more artists to your queue or adjusting your cities</p>
             </div>
         </div>
     </div>
