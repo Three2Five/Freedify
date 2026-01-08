@@ -127,6 +127,12 @@ Stream music and podcasts from anywhere. **Generate smart playlists with AI**, s
 | R | Cycle repeat mode |
 | F | Toggle fullscreen |
 | Q | Toggle queue |
+| E | Toggle EQ |
+| P | Add to Playlist |
+| H | Toggle HiFi/Hi-Res |
+| D | Download current track |
+| A | Toggle AI Radio |
+| Shift+S | Sync to Drive |
 | ? | Show shortcuts help |
 
 ---

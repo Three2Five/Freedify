@@ -5288,9 +5288,16 @@ document.addEventListener('keydown', (e) => {
         return;
     }
     
-    // S - Shuffle (if in queue view)
-    if (e.key.toLowerCase() === 's') {
+    // S - Shuffle (if in queue view) (no Shift)
+    if (e.key.toLowerCase() === 's' && !e.shiftKey) {
         shuffleQueue();
+        return;
+    }
+    
+    // Shift + S - Sync to Drive
+    if (e.key.toLowerCase() === 's' && e.shiftKey) {
+        e.preventDefault();
+        syncBtn?.click();
         return;
     }
     
@@ -5303,6 +5310,41 @@ document.addEventListener('keydown', (e) => {
     // Q - Toggle queue
     if (e.key.toLowerCase() === 'q') {
         toggleQueue();
+        return;
+    }
+    
+    // E - Toggle EQ panel
+    if (e.key.toLowerCase() === 'e') {
+        eqToggleBtn?.click();
+        return;
+    }
+    
+    // P - Add current track to Playlist
+    if (e.key.toLowerCase() === 'p') {
+        const currentTrack = state.queue[state.currentIndex];
+        if (currentTrack && window.openAddToPlaylistModal) {
+            window.openAddToPlaylistModal(currentTrack);
+        } else {
+            showToast('No track playing');
+        }
+        return;
+    }
+    
+    // H - Toggle HiFi / Hi-Res mode
+    if (e.key.toLowerCase() === 'h') {
+        hifiBtn?.click();
+        return;
+    }
+    
+    // D - Download current track
+    if (e.key.toLowerCase() === 'd') {
+        downloadCurrentTrack();
+        return;
+    }
+    
+    // A - Toggle AI Radio
+    if (e.key.toLowerCase() === 'a') {
+        aiRadioBtn?.click();
         return;
     }
 });
