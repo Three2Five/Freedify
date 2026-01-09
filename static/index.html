@@ -135,17 +135,25 @@
             <div class="modal-content">
                 <h3>Download Track</h3>
                 <p id="download-track-name">Track Name</p>
+                <p id="download-source-hint" class="download-hint hidden"></p>
                 
                 <div class="format-selector">
                     <label>Select Format:</label>
                     <select id="download-format">
-                        <option value="mp3">MP3 (320kbps)</option>
-                        <option value="flac">FLAC (Lossless / Hi-Res)</option>
-                        <option value="aiff">AIFF (16-bit)</option>
-                        <option value="aiff_24">AIFF (24-bit)</option>
-                        <option value="wav">WAV (16-bit)</option>
-                        <option value="wav_24">WAV (24-bit)</option>
-                        <option value="alac">ALAC (Apple Lossless)</option>
+                        <optgroup label="Lossy">
+                            <option value="mp3" data-min-quality="lossy">MP3 (320kbps)</option>
+                        </optgroup>
+                        <optgroup label="Lossless (16-bit)">
+                            <option value="flac" data-min-quality="lossless">FLAC (16-bit)</option>
+                            <option value="aiff" data-min-quality="lossless">AIFF (16-bit)</option>
+                            <option value="wav" data-min-quality="lossless">WAV (16-bit)</option>
+                            <option value="alac" data-min-quality="lossless">ALAC (Apple Lossless)</option>
+                        </optgroup>
+                        <optgroup id="hires-formats" label="Hi-Res (24-bit)">
+                            <option value="flac_24" data-min-quality="hires">FLAC (24-bit Hi-Res)</option>
+                            <option value="aiff_24" data-min-quality="hires">AIFF (24-bit)</option>
+                            <option value="wav_24" data-min-quality="hires">WAV (24-bit)</option>
+                        </optgroup>
                     </select>
                 </div>
                 

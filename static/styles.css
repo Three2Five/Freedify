@@ -5417,3 +5417,13 @@ body {
 .btn-icon {
     font-size: 1.2em;
 }
+
+/* Download Modal Source Hint */
+.download-hint {
+    font-size: 0.85em;
+    color: var(--text-secondary);
+    padding: 8px 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    margin-bottom: 10px;
+}

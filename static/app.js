@@ -672,7 +672,94 @@ function downloadCurrentTrack() {
     trackToDownload = track;
     isBatchDownload = false;
     downloadTrackName.textContent = `${track.name} - ${track.artists}`;
+    
+    // Filter format options based on track source
+    updateDownloadFormatOptions(track);
+    
     downloadModal.classList.remove('hidden');
+}
+
+// Update download format options based on track source quality
+function updateDownloadFormatOptions(track) {
+    const source = track?.source || '';
+    const formatSelect = $('#download-format');
+    const hiresGroup = $('#hires-formats');
+    const sourceHint = $('#download-source-hint');
+    
+    // Categorize sources
+    const isHiResSource = source === 'dab' || source === 'qobuz';
+    const isHiFiSource = source === 'deezer' || source === 'jamendo' || source === 'tidal';
+    const isLossySource = source === 'ytmusic' || source === 'youtube' || source === 'podcast' || 
+                          source === 'import' || source === 'archive' || source === 'phish' ||
+                          source === 'soundcloud' || source === 'bandcamp';
+    
+    // Re-enable all options first
+    formatSelect.querySelectorAll('option, optgroup').forEach(el => {
+        el.disabled = false;
+        el.style.display = '';
+    });
+    
+    // Hide/show hint
+    if (sourceHint) {
+        sourceHint.classList.add('hidden');
+        sourceHint.textContent = '';
+    }
+    
+    if (isLossySource) {
+        // Lossy source: only MP3 available
+        formatSelect.querySelectorAll('option').forEach(opt => {
+            if (opt.dataset.minQuality !== 'lossy') {
+                opt.disabled = true;
+                opt.style.display = 'none';
+            }
+        });
+        // Hide optgroups for lossless
+        formatSelect.querySelectorAll('optgroup').forEach(grp => {
+            if (grp.label !== 'Lossy') {
+                grp.style.display = 'none';
+            }
+        });
+        formatSelect.value = 'mp3';
+        if (sourceHint) {
+            sourceHint.textContent = `⚠️ Source is ${source || 'external'} - only MP3 available`;
+            sourceHint.classList.remove('hidden');
+        }
+    } else if (isHiFiSource && !isHiResSource) {
+        // HiFi source (16-bit lossless): hide 24-bit options
+        if (hiresGroup) hiresGroup.style.display = 'none';
+        formatSelect.querySelectorAll('option[data-min-quality="hires"]').forEach(opt => {
+            opt.disabled = true;
+            opt.style.display = 'none';
+        });
+        formatSelect.value = 'flac';
+    } else if (isHiResSource) {
+        // Hi-Res source: show 24-bit only if Hi-Res mode is enabled
+        if (!state.hiResMode) {
+            if (hiresGroup) hiresGroup.style.display = 'none';
+            formatSelect.querySelectorAll('option[data-min-quality="hires"]').forEach(opt => {
+                opt.disabled = true;
+                opt.style.display = 'none';
+            });
+            formatSelect.value = 'flac';
+            if (sourceHint) {
+                sourceHint.textContent = '💡 Enable Hi-Res mode for 24-bit options';
+                sourceHint.classList.remove('hidden');
+            }
+        } else {
+            // All options available
+            formatSelect.value = 'flac_24';
+        }
+    } else {
+        // Unknown source: default to 16-bit lossless, show 24-bit only if Hi-Res mode
+        if (!state.hiResMode) {
+            if (hiresGroup) hiresGroup.style.display = 'none';
+            formatSelect.querySelectorAll('option[data-min-quality="hires"]').forEach(opt => {
+                opt.disabled = true;
+                opt.style.display = 'none';
+            });
+        }
+        formatSelect.value = 'flac';
+    }
 }
 
 if (downloadCurrentBtn) {

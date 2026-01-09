@@ -884,7 +884,12 @@ class AudioService:
         "flac": {
             "ext": ".flac",
             "mime": "audio/flac",
-            "args": ["-acodec", "flac", "-f", "flac"]
+            "args": ["-acodec", "flac", "-sample_fmt", "s16", "-f", "flac"]  # Force 16-bit
+        },
+        "flac_24": {
+            "ext": ".flac",
+            "mime": "audio/flac",
+            "args": ["-acodec", "flac", "-sample_fmt", "s32", "-f", "flac"]  # 24-bit preserved
         },
         "aiff": {
             "ext": ".aiff",
@@ -919,8 +924,7 @@ class AudioService:
         
         try:
             logger.info(f"Transcoding to {format} using FFmpeg at: {FFMPEG_PATH}")
-            if format == "flac": # Passthrough for FLAC
-                 return flac_data
+            # Note: flac_24 goes through FFmpeg to ensure proper sample format
 
             cmd = [
                 FFMPEG_PATH,
