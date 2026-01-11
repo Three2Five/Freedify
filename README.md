@@ -1,6 +1,6 @@
 # Freedify - Music Streaming Web App
 
-*Last updated: January 9, 2026*
+*Last updated: January 11, 2026*
 
 Stream music and podcasts from anywhere. **Generate smart playlists with AI**, search songs, albums, artists, podcasts or paste URLs from Spotify, SoundCloud, Bandcamp, Archive.org, Phish.in, and more.
 
@@ -37,6 +37,7 @@ Stream music and podcasts from anywhere. **Generate smart playlists with AI**, s
   - Added Setlist Detail Modal to preview shows before listening
 - **Podcast Search** - Search and stream podcasts via PodcastIndex API
 - **Episode Details** - Click any episode to see full title, description, and publish date
+- **Concert Search** - Find upcoming shows via **More → Concert Search** (Ticketmaster + SeatGeek)
 - **URL Import** - Paste links from Spotify, Bandcamp, Soundcloud, Archive.org, Phish.in
 
 ### 🎵 Live Show Archives
@@ -296,6 +297,8 @@ If you hit rate limits, you can add your own keys:
 | `GOOGLE_CLIENT_ID` | For Google Drive sync (get at console.cloud.google.com) |
 | `JAMENDO_CLIENT_ID` | For Jamendo indie music fallback (get at developer.jamendo.com) |
 | `GENIUS_ACCESS_TOKEN` | For Genius lyrics (get at genius.com/api-clients) |
+| `TICKETMASTER_API_KEY` | For Concert Search (free at developer.ticketmaster.com) |
+| `SEATGEEK_CLIENT_ID` | For Concert Search fallback (free at seatgeek.com/account/develop) |
 | `DAB_SESSION` | **Recommended** - For Hi-Res (24-bit) Audio (from Dab/Qobuz) |
 | `DAB_VISITOR_ID` | **Recommended** - For Hi-Res (24-bit) Audio (from Dab/Qobuz) |
 
