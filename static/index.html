@@ -107,6 +107,7 @@
             <!-- Search More Menu -->
             <div id="search-more-menu" class="search-more-menu hidden">
                 <button class="menu-item" id="ai-menu-btn">Smart Playlist</button>
+                <button class="menu-item" id="concert-search-menu-btn">Concert Search</button>
                 <div class="menu-divider"></div>
                 <button class="menu-item type-btn-menu" data-type="ytmusic">YT Music</button>
                 <button class="menu-item type-btn-menu" data-type="setlist">Setlists</button>
@@ -726,6 +727,45 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Concert Alerts Modal -->
+    <div id="concert-modal" class="modal hidden">
+        <div class="modal-content concert-modal-content">
+            <div class="modal-header">
+                <h3>🎫 Concert Alerts</h3>
+                <button class="modal-close" id="concert-modal-close">×</button>
+            </div>
+            
+            <!-- Tabs: Recent Artists | Search -->
+            <div class="concert-tabs">
+                <button class="concert-tab active" data-tab="recent">Recent Artists</button>
+                <button class="concert-tab" data-tab="search">Search Artist</button>
+            </div>
+            
+            <!-- Recent Artists Tab (default) -->
+            <div id="concert-recent-section" class="concert-tab-content">
+                <p class="concert-hint">Showing concerts for artists you've listened to recently</p>
+            </div>
+            
+            <!-- Search Tab -->
+            <div id="concert-search-section" class="concert-tab-content hidden">
+                <div class="concert-search-wrapper">
+                    <input type="text" id="concert-artist-search" placeholder="Search for an artist...">
+                    <button id="concert-search-btn" class="btn-primary">Search</button>
+                </div>
+            </div>
+            
+            <!-- Results -->
+            <div id="concert-results" class="concert-results"></div>
+            <div id="concert-loading" class="concert-loading hidden">
+                <span class="loading-spinner"></span> Finding concerts...
+            </div>
+            <div id="concert-empty" class="concert-empty hidden">
+                <span>🎵</span>
+                <p>No upcoming concerts found</p>
             </div>
         </div>
     </div>

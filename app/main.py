@@ -31,6 +31,7 @@ from app.setlist_service import setlist_service
 from app.listenbrainz_service import listenbrainz_service
 from app.jamendo_service import jamendo_service
 from app.genius_service import genius_service
+from app.concert_service import concert_service
 
 from app.cache import cleanup_cache, periodic_cleanup, is_cached, get_cache_path
 
@@ -1161,6 +1162,51 @@ async def proxy_image(url: str):
             )
     except Exception as e:
         logger.error(f"Image proxy error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ========== CONCERT ALERTS ENDPOINTS ==========
+
+@app.get("/api/concerts/search")
+async def search_concerts(
+    artist: str = Query(..., description="Artist name to search"),
+    city: Optional[str] = Query(None, description="City to filter events")
+):
+    """
+    Search for upcoming concerts by artist name.
+    Uses Ticketmaster with SeatGeek fallback.
+    """
+    try:
+        logger.info(f"Concert search for: {artist} (city: {city})")
+        events = await concert_service.search_events(artist, city, limit=20)
+        return {"events": events, "artist": artist, "city": city}
+    except Exception as e:
+        logger.error(f"Concert search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/concerts/for-artists")
+async def get_concerts_for_artists(
+    artists: str = Query(..., description="Comma-separated list of artist names"),
+    cities: Optional[str] = Query(None, description="Comma-separated list of cities")
+):
+    """
+    Get upcoming concerts for multiple artists.
+    Useful for showing concerts from recently listened artists.
+    """
+    try:
+        artist_list = [a.strip() for a in artists.split(",") if a.strip()]
+        city_list = [c.strip() for c in cities.split(",")] if cities else None
+        
+        if not artist_list:
+            return {"events": [], "artists": [], "cities": city_list}
+        
+        logger.info(f"Concert search for {len(artist_list)} artists, cities: {city_list}")
+        events = await concert_service.get_events_for_artists(artist_list, city_list)
+        
+        return {"events": events, "artists": artist_list, "cities": city_list}
+    except Exception as e:
+        logger.error(f"Concerts for artists error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

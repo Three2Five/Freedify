@@ -6302,3 +6302,235 @@ window.addEventListener('resize', () => {
 });
 
 console.log('Audio visualizer loaded');
+
+// ========== CONCERT ALERTS ==========
+
+const concertModal = $('#concert-modal');
+const concertModalClose = $('#concert-modal-close');
+const concertMenuBtn = $('#concert-search-menu-btn');
+const concertResults = $('#concert-results');
+const concertLoading = $('#concert-loading');
+const concertEmpty = $('#concert-empty');
+const concertArtistSearch = $('#concert-artist-search');
+const concertSearchBtn = $('#concert-search-btn');
+const concertTabs = $$('.concert-tab');
+const concertRecentSection = $('#concert-recent-section');
+const concertSearchSection = $('#concert-search-section');
+
+// Concert State
+const concertState = {
+    currentTab: 'recent'
+};
+
+// Open Concert Modal (optionally with artist pre-filled from main search)
+function openConcertModal(artistQuery = null) {
+    concertModal?.classList.remove('hidden');
+    
+    // If artist query provided, switch to search tab and auto-search
+    if (artistQuery && artistQuery.trim()) {
+        concertState.currentTab = 'search';
+        concertTabs.forEach(t => t.classList.remove('active'));
+        concertTabs.forEach(t => { if (t.dataset.tab === 'search') t.classList.add('active'); });
+        concertRecentSection?.classList.add('hidden');
+        concertSearchSection?.classList.remove('hidden');
+        
+        if (concertArtistSearch) {
+            concertArtistSearch.value = artistQuery.trim();
+        }
+        searchConcerts(artistQuery.trim());
+    } else if (concertState.currentTab === 'recent') {
+        // Load concerts for recent artists by default
+        loadConcertsForRecentArtists();
+    }
+}
+
+// Close Concert Modal
+function closeConcertModal() {
+    concertModal?.classList.add('hidden');
+}
+
+// Get unique artists from recent listen history
+function getRecentArtists() {
+    const artistSet = new Set();
+    const artists = [];
+    
+    // Get from current queue
+    state.queue.forEach(track => {
+        if (track.artists && !artistSet.has(track.artists)) {
+            artistSet.add(track.artists);
+            artists.push(track.artists.split(',')[0].trim()); // Take first artist
+        }
+    });
+    
+    // Limit to 10 unique artists
+    return artists.slice(0, 10);
+}
+
+// Load concerts for recent artists
+async function loadConcertsForRecentArtists() {
+    const artists = getRecentArtists();
+    
+    if (artists.length === 0) {
+        concertResults.innerHTML = '';
+        concertEmpty.classList.remove('hidden');
+        concertEmpty.querySelector('p').textContent = 'Listen to some music first to see concert recommendations!';
+        return;
+    }
+    
+    concertLoading.classList.remove('hidden');
+    concertEmpty.classList.add('hidden');
+    concertResults.innerHTML = '';
+    
+    try {
+        const response = await fetch(`/api/concerts/for-artists?artists=${encodeURIComponent(artists.join(','))}`);
+        const data = await response.json();
+        
+        concertLoading.classList.add('hidden');
+        
+        if (data.events && data.events.length > 0) {
+            renderConcertCards(data.events);
+        } else {
+            concertEmpty.classList.remove('hidden');
+            concertEmpty.querySelector('p').textContent = 'No upcoming concerts found for your recent artists';
+        }
+    } catch (error) {
+        console.error('Concert fetch error:', error);
+        concertLoading.classList.add('hidden');
+        concertEmpty.classList.remove('hidden');
+        concertEmpty.querySelector('p').textContent = 'Failed to load concerts. Check API keys.';
+    }
+}
+
+// Search concerts for a specific artist
+async function searchConcerts(artist) {
+    if (!artist.trim()) return;
+    
+    concertLoading.classList.remove('hidden');
+    concertEmpty.classList.add('hidden');
+    concertResults.innerHTML = '';
+    
+    try {
+        const response = await fetch(`/api/concerts/search?artist=${encodeURIComponent(artist)}`);
+        const data = await response.json();
+        
+        concertLoading.classList.add('hidden');
+        
+        if (data.events && data.events.length > 0) {
+            renderConcertCards(data.events);
+        } else {
+            concertEmpty.classList.remove('hidden');
+            concertEmpty.querySelector('p').textContent = `No upcoming concerts found for "${artist}"`;
+        }
+    } catch (error) {
+        console.error('Concert search error:', error);
+        concertLoading.classList.add('hidden');
+        concertEmpty.classList.remove('hidden');
+        concertEmpty.querySelector('p').textContent = 'Search failed. Check API keys.';
+    }
+}
+
+// Render concert cards
+function renderConcertCards(events) {
+    concertResults.innerHTML = events.map(event => {
+        const date = event.date ? new Date(event.date + 'T00:00:00').toLocaleDateString('en-US', {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric'
+        }) : 'TBA';
+        
+        const time = event.time ? formatConcertTime(event.time) : '';
+        const location = [event.city, event.state, event.country].filter(Boolean).join(', ');
+        const priceRange = event.price_min && event.price_max 
+            ? `$${Math.round(event.price_min)} - $${Math.round(event.price_max)}`
+            : event.price_min 
+                ? `From $${Math.round(event.price_min)}`
+                : '';
+        
+        return `
+            <div class="concert-card">
+                ${event.image 
+                    ? `<img class="concert-card-image" src="${event.image}" alt="${event.artist}" onerror="this.outerHTML='<div class=\\'concert-card-image placeholder\\'>🎵</div>'">`
+                    : '<div class="concert-card-image placeholder">🎵</div>'
+                }
+                <div class="concert-card-info">
+                    <div class="concert-card-artist">
+                        ${event.artist || event.name}
+                        <span class="concert-source-badge">${event.source}</span>
+                    </div>
+                    <div class="concert-card-venue">📍 ${event.venue}${location ? `, ${location}` : ''}</div>
+                    <div class="concert-card-date">📅 ${date}${time ? ` • ${time}` : ''}</div>
+                    ${priceRange ? `<div class="concert-card-price">💰 ${priceRange}</div>` : ''}
+                </div>
+                <div class="concert-card-actions">
+                    ${event.ticket_url 
+                        ? `<a href="${event.ticket_url}" target="_blank" rel="noopener" class="concert-ticket-btn">🎫 Tickets</a>`
+                        : ''
+                    }
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Format time from HH:MM:SS to readable
+function formatConcertTime(timeStr) {
+    if (!timeStr) return '';
+    const [hours, minutes] = timeStr.split(':');
+    const h = parseInt(hours);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const hour12 = h % 12 || 12;
+    return `${hour12}:${minutes} ${ampm}`;
+}
+
+// Event Listeners
+concertMenuBtn?.addEventListener('click', () => {
+    // Get text from main search input if any
+    const mainSearchInput = $('#search-input');
+    const artistQuery = mainSearchInput?.value || '';
+    openConcertModal(artistQuery);
+    // Close the more menu
+    $('#search-more-menu')?.classList.add('hidden');
+});
+concertModalClose?.addEventListener('click', closeConcertModal);
+concertModal?.addEventListener('click', (e) => {
+    if (e.target === concertModal) closeConcertModal();
+});
+
+// Tab switching
+concertTabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+        const tabName = tab.dataset.tab;
+        concertState.currentTab = tabName;
+        
+        // Update active tab
+        concertTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        
+        // Show/hide sections
+        if (tabName === 'recent') {
+            concertRecentSection.classList.remove('hidden');
+            concertSearchSection.classList.add('hidden');
+            loadConcertsForRecentArtists();
+        } else {
+            concertRecentSection.classList.add('hidden');
+            concertSearchSection.classList.remove('hidden');
+            concertResults.innerHTML = '';
+            concertEmpty.classList.add('hidden');
+        }
+    });
+});
+
+// Search button
+concertSearchBtn?.addEventListener('click', () => {
+    searchConcerts(concertArtistSearch?.value || '');
+});
+
+// Search on Enter
+concertArtistSearch?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+        searchConcerts(concertArtistSearch.value);
+    }
+});
+
+console.log('Concert alerts loaded');
