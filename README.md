@@ -243,9 +243,26 @@ Open http://localhost:8000
 
 ---
 
-## 🌐 Deploy to Railway (Recommended for Hi-Res)
+## 🐳 Self-Hosting with Docker (Recommended for NAS/Local Servers)
 
-**Railway is recommended** for full Hi-Res (24-bit) support. Render blocks Dab Music API requests.
+1. **Install Docker** on your machine.
+2. **Clone the repo:**
+   ```bash
+   git clone https://github.com/BioHapHazard/Freedify
+   cd Freedify
+   ```
+3. **Configure:** Open `docker-compose.yml` and add your optional keys (Dab Music, ListenBrainz, etc.) in the `environment` section.
+4. **Start the server:**
+   ```bash
+   docker compose up -d
+   ```
+5. **Access:** Open http://localhost:8000 in your browser.
+
+---
+
+## 🌐 Deploy to Railway (Recommended for Mobile + Hi-Res)
+
+**Railway is recommended** for mobile users who want Hi-Res (24-bit) streaming. Docker self-hosting is great for local networks, but Railway gives you a public URL for accessing your music from anywhere.
 
 1. Go to [railway.app](https://railway.app) → New Project
 2. Deploy from GitHub repo
