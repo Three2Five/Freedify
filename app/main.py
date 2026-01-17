@@ -114,12 +114,6 @@ async def get_config():
         "google_client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
     }
 
-
-@app.get("/api/spotify/made-for-you")
-async def get_spotify_made_for_you():
-    """Get Spotify 'Made For You' playlists (Daily Mix, Discover Weekly)."""
-    return await spotify_service.get_made_for_you_playlists()
-
 @app.get("/api/search")
 async def search(
     q: str = Query(..., min_length=1, description="Search query"),

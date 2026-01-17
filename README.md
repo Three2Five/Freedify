@@ -1,6 +1,6 @@
 # Freedify - Music Streaming Web App
 
-*Last updated: January 11, 2026*
+*Last updated: January 17, 2026*
 
 Stream music and podcasts from anywhere. **Generate smart playlists with AI**, search songs, albums, artists, podcasts or paste URLs from Spotify, SoundCloud, Bandcamp, Archive.org, Phish.in, and more.
 
@@ -281,15 +281,10 @@ When deploying to Render (or other hosts), set these in your Dashboard:
 | `MP3_BITRATE` | No | Default: 320k |
 | `PORT` | No | Default: 8000 |
 
-### Optional Spotify Credentials (for high traffic)
-
-If you hit rate limits, you can add your own keys:
+### Optional API Keys
 
 | Variable | Description |
 |----------|-------------|
-| `SPOTIFY_CLIENT_ID` | Your App Client ID |
-| `SPOTIFY_CLIENT_SECRET` | Your App Client Secret |
-| `SPOTIFY_SP_DC` | Cookie for authenticated web player access |
 | `PODCASTINDEX_KEY` | For Podcast Search (better results) |
 | `PODCASTINDEX_SECRET` | For Podcast Search (required if KEY is used) |
 | `SETLIST_FM_API_KEY` | For Setlist.fm concert search (free at setlist.fm/settings/api) |
@@ -301,6 +296,17 @@ If you hit rate limits, you can add your own keys:
 | `SEATGEEK_CLIENT_ID` | For Concert Search fallback (free at seatgeek.com/account/develop) |
 | `DAB_SESSION` | **Recommended** - For Hi-Res (24-bit) Audio (from Dab/Qobuz) |
 | `DAB_VISITOR_ID` | **Recommended** - For Hi-Res (24-bit) Audio (from Dab/Qobuz) |
+
+### How to Get Dab Music Cookies (for Hi-Res Audio)
+
+1. Go to [dabmusic.xyz](https://dabmusic.xyz) and log in
+2. Open browser DevTools (F12 or Right-click → Inspect)
+3. Go to **Application** tab → **Cookies** → `https://dabmusic.xyz`
+4. Find and copy these values:
+   - `session` → Set as `DAB_SESSION`
+   - `visitor_id` → Set as `DAB_VISITOR_ID`
+
+> ⚠️ These cookies expire periodically. If Hi-Res stops working, repeat these steps to get fresh values.
 
 ---
 
