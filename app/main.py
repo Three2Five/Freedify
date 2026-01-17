@@ -371,6 +371,9 @@ async def get_album(album_id: str):
             # Podcast Import (PodcastIndex)
             feed_id = album_id.replace("pod_", "")
             album = await podcast_service.get_podcast_episodes(feed_id)
+        elif album_id.startswith("itunes_"):
+            # iTunes Podcast - fetch episodes via RSS
+            album = await podcast_service.get_podcast_episodes(album_id)
         elif album_id.startswith("setlist_"):
             # Setlist.fm - get full setlist with tracks
             setlist_id = album_id.replace("setlist_", "")

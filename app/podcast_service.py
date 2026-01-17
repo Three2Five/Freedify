@@ -44,12 +44,13 @@ class PodcastService:
         }
 
     async def search_podcasts(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
-        """Search for podcasts by term."""
+        """Search for podcasts by term. Uses PodcastIndex if configured, else iTunes."""
+        # Use iTunes fallback if no PodcastIndex keys
+        if not self.api_key or not self.api_secret:
+            logger.info("No PodcastIndex keys - using iTunes fallback")
+            return await self._search_itunes(query, limit)
+        
         try:
-            if not self.api_key:
-                logger.error("Cannot search podcasts: Missing API Key")
-                return []
-
             params = {"q": query, "max": limit}
             response = await self.client.get(
                 f"{self.BASE_URL}/search/byterm",
@@ -59,7 +60,8 @@ class PodcastService:
             
             if response.status_code != 200:
                 logger.error(f"PodcastIndex search failed: {response.status_code}")
-                return []
+                # Fall back to iTunes on error
+                return await self._search_itunes(query, limit)
                 
             data = response.json()
             feeds = data.get("feeds", [])
@@ -68,12 +70,64 @@ class PodcastService:
             
         except Exception as e:
             logger.error(f"Podcast search error: {e}")
+            # Fall back to iTunes on exception
+            return await self._search_itunes(query, limit)
+    
+    async def _search_itunes(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+        """Fallback: Search podcasts via iTunes Search API (no API key needed)."""
+        try:
+            response = await self.client.get(
+                "https://itunes.apple.com/search",
+                params={
+                    "term": query,
+                    "media": "podcast",
+                    "limit": limit
+                }
+            )
+            
+            if response.status_code != 200:
+                logger.error(f"iTunes search failed: {response.status_code}")
+                return []
+            
+            data = response.json()
+            results = data.get("results", [])
+            
+            return [self._format_itunes_podcast(p) for p in results]
+            
+        except Exception as e:
+            logger.error(f"iTunes search error: {e}")
             return []
+    
+    def _format_itunes_podcast(self, podcast: dict) -> dict:
+        """Format iTunes podcast result to app format."""
+        # iTunes returns feedUrl which we can use to fetch episodes
+        feed_url = podcast.get("feedUrl", "")
+        # Create a simple ID from the collection ID
+        collection_id = podcast.get("collectionId", 0)
+        
+        return {
+            "id": f"itunes_{collection_id}",
+            "type": "album",
+            "is_podcast": True,
+            "name": podcast.get("collectionName", "Unknown Podcast"),
+            "artists": podcast.get("artistName", "Unknown"),
+            "album_art": podcast.get("artworkUrl600") or podcast.get("artworkUrl100") or "/static/icon.svg",
+            "description": podcast.get("primaryGenreName", ""),
+            "source": "podcast",
+            "feed_url": feed_url  # Store for episode fetching
+        }
 
     async def get_podcast_episodes(self, feed_id: str, limit: int = 50) -> Optional[Dict[str, Any]]:
-        """Get episodes for a podcast by feed ID."""
+        """Get episodes for a podcast by feed ID (supports PodcastIndex and iTunes)."""
         try:
+            # Handle iTunes podcasts - need to look up feed URL first
+            if feed_id.startswith("itunes_"):
+                collection_id = feed_id.replace("itunes_", "")
+                return await self._get_itunes_episodes(collection_id, limit)
+            
+            # Handle PodcastIndex podcasts
             if not self.api_key:
+                logger.warning("Cannot fetch PodcastIndex episodes: Missing API Key")
                 return None
 
             # First get feed info
@@ -144,6 +198,113 @@ class PodcastService:
             
         except Exception as e:
             logger.error(f"Error fetching episodes for feed {feed_id}: {e}")
+            return None
+    
+    async def _get_itunes_episodes(self, collection_id: str, limit: int = 50) -> Optional[Dict[str, Any]]:
+        """Fetch episodes for iTunes podcast by looking up feed URL and parsing RSS."""
+        import xml.etree.ElementTree as ET
+        
+        try:
+            # Look up podcast to get feed URL
+            lookup_response = await self.client.get(
+                "https://itunes.apple.com/lookup",
+                params={"id": collection_id, "entity": "podcast"}
+            )
+            
+            if lookup_response.status_code != 200:
+                logger.error(f"iTunes lookup failed: {lookup_response.status_code}")
+                return None
+            
+            results = lookup_response.json().get("results", [])
+            if not results:
+                logger.error(f"No iTunes results for collection {collection_id}")
+                return None
+            
+            podcast_info = results[0]
+            feed_url = podcast_info.get("feedUrl")
+            
+            if not feed_url:
+                logger.error(f"No feed URL for iTunes podcast {collection_id}")
+                return None
+            
+            # Fetch and parse RSS feed
+            feed_response = await self.client.get(feed_url, timeout=30.0)
+            if feed_response.status_code != 200:
+                logger.error(f"Failed to fetch RSS feed: {feed_response.status_code}")
+                return None
+            
+            # Parse XML
+            root = ET.fromstring(feed_response.text)
+            channel = root.find("channel")
+            if channel is None:
+                return None
+            
+            podcast_title = channel.findtext("title", "Unknown Podcast")
+            podcast_author = channel.findtext("{http://www.itunes.com/dtds/podcast-1.0.dtd}author", "Unknown")
+            podcast_image = podcast_info.get("artworkUrl600") or podcast_info.get("artworkUrl100") or "/static/icon.svg"
+            
+            # Parse episodes
+            tracks = []
+            for idx, item in enumerate(channel.findall("item")):
+                if idx >= limit:
+                    break
+                
+                enclosure = item.find("enclosure")
+                if enclosure is None:
+                    continue
+                
+                audio_url = enclosure.get("url", "")
+                if not audio_url:
+                    continue
+                
+                safe_id = f"LINK:{base64.urlsafe_b64encode(audio_url.encode()).decode()}"
+                
+                # Parse duration (could be HH:MM:SS or seconds)
+                duration_str = "0:00"
+                itunes_duration = item.findtext("{http://www.itunes.com/dtds/podcast-1.0.dtd}duration", "")
+                if itunes_duration:
+                    if ":" in itunes_duration:
+                        duration_str = itunes_duration
+                    else:
+                        try:
+                            secs = int(itunes_duration)
+                            duration_str = f"{secs // 60}:{secs % 60:02d}"
+                        except:
+                            pass
+                # Get episode image (itunes:image has href attribute)
+                episode_image = podcast_image
+                itunes_image = item.find("{http://www.itunes.com/dtds/podcast-1.0.dtd}image")
+                if itunes_image is not None and itunes_image.get("href"):
+                    episode_image = itunes_image.get("href")
+                
+                tracks.append({
+                    "id": safe_id,
+                    "type": "track",
+                    "name": item.findtext("title", "Unknown Episode"),
+                    "artists": podcast_author,
+                    "album": podcast_title,
+                    "album_art": episode_image,
+                    "duration": duration_str,
+                    "isrc": safe_id,
+                    "source": "podcast",
+                    "description": item.findtext("description", ""),
+                    "datePublished": item.findtext("pubDate", "")
+                })
+            
+            return {
+                "id": f"itunes_{collection_id}",
+                "type": "album",
+                "name": podcast_title,
+                "artists": podcast_author,
+                "image": podcast_image,
+                "album_art": podcast_image,
+                "tracks": tracks,
+                "total_tracks": len(tracks),
+                "source": "podcast"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error fetching iTunes episodes: {e}")
             return None
 
     def _format_podcast(self, feed: dict) -> dict:
