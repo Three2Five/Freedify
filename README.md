@@ -144,6 +144,17 @@ Open [http://localhost:8000](http://localhost:8000) and start streaming! 🎵
 - **Save Tracks** - Save audio directly to your "Freedify" folder
 - **Privacy** - Uses Drive appDataFolder (hidden from Drive UI)
 
+### 🍎 Apple Music Users
+Freedify supports Spotify playlist URLs. To import your Apple Music playlists, use a free transfer tool:
+
+| Tool | Link | Free Limit |
+|------|------|------------|
+| Soundiiz | [soundiiz.com](https://soundiiz.com) | 200 songs |
+| TuneMyMusic | [tunemymusic.com](https://www.tunemymusic.com) | 500 songs |
+| FreeYourMusic | [freeyourmusic.com](https://freeyourmusic.com) | Desktop app |
+
+**Steps:** Transfer playlist to Spotify (free account works!) → Copy Spotify URL → Paste in Freedify → Stream in lossless!
+
 ---
 
 ## 🔑 Google Cloud Setup (Required for Drive Sync & AI)
