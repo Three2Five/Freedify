@@ -204,7 +204,7 @@ To enable **Google Drive Sync** and **AI features (Smart Playlist, AI Radio, DJ 
 
 | Key | Action |
 |-----|--------|
-| Space | Play/Pause |
+| Enter | Play/Pause |
 | ← / → | Previous/Next track |
 | Shift+← / Shift+→ | Seek -/+ 10 seconds |
 | ↑ / ↓ | Volume up/down |

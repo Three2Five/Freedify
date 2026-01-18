@@ -28,6 +28,58 @@ const state = {
     lastSearchType: 'track', // Store last search type
 };
 
+// ========== iOS AUDIO KEEPALIVE ==========
+// iOS Safari aggressively suspends web audio on screen lock.
+// This silent audio context helps keep the audio engine alive.
+let iosAudioContext = null;
+let iosKeepAliveStarted = false;
+
+function startIOSAudioKeepAlive() {
+    if (iosKeepAliveStarted) return;
+    
+    try {
+        // Create a silent AudioContext
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContext) return;
+        
+        iosAudioContext = new AudioContext();
+        
+        // Create a silent oscillator (inaudible frequency)
+        const oscillator = iosAudioContext.createOscillator();
+        const gainNode = iosAudioContext.createGain();
+        
+        // Set volume to 0 (silent)
+        gainNode.gain.value = 0;
+        
+        // Use a very low frequency (essentially silent)
+        oscillator.frequency.value = 1;
+        oscillator.type = 'sine';
+        
+        // Connect: oscillator -> gain (muted) -> output
+        oscillator.connect(gainNode);
+        gainNode.connect(iosAudioContext.destination);
+        
+        // Start the silent oscillator
+        oscillator.start();
+        
+        iosKeepAliveStarted = true;
+        console.log('iOS audio keepalive started');
+        
+        // Resume context on visibility change (iOS sometimes suspends it)
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && iosAudioContext?.state === 'suspended') {
+                iosAudioContext.resume();
+            }
+        });
+    } catch (e) {
+        console.log('iOS audio keepalive not available:', e.message);
+    }
+}
+
+// Start keepalive on first user interaction (required by iOS)
+document.addEventListener('click', () => startIOSAudioKeepAlive(), { once: true });
+document.addEventListener('touchstart', () => startIOSAudioKeepAlive(), { once: true });
+
 // ========== DOM ELEMENTS ==========
 // App.js v0106L - Robust Proxy Cleanup
 console.log("Freedify v0106L Loaded - Robust Proxy Cleanup");
