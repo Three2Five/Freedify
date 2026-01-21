@@ -126,6 +126,7 @@ class MusicBrainzService:
             release_id = release.get("id", "")
             
             result = {
+                "album": release.get("title", ""),
                 "release_date": release.get("date", ""),
                 "release_id": release_id,
                 "label": "",
@@ -143,8 +144,17 @@ class MusicBrainzService:
             result["genres"] = [g.get("name", "") for g in genres[:5]]
             
             # Try to get cover art from Cover Art Archive
+            # Try to get cover art from Cover Art Archive
             if release_id:
                 cover_url = await self._get_cover_art(release_id)
+                # Fallback to release group
+                if not cover_url:
+                     # Access release-group from release object (included via inc=release-groups)
+                     rg = release.get("release-group", {})
+                     rg_id = rg.get("id")
+                     if rg_id:
+                         cover_url = await self._get_cover_art(rg_id, entity_type="release-group")
+                
                 if cover_url:
                     result["cover_art_url"] = cover_url
             
@@ -154,16 +164,100 @@ class MusicBrainzService:
         except Exception as e:
             logger.debug(f"MusicBrainz lookup error for {isrc}: {e}")
             return None
+
+    async def lookup_by_query(self, title: str, artist: str) -> Optional[Dict[str, Any]]:
+        """Look up by query (Title AND Artist) when ISRC is unknown or invalid."""
+        if not title or not artist:
+            return None
+            
+        query = f'recording:"{title}" AND artist:"{artist}"'
+        logger.info(f"Looking up on MusicBrainz by query: {query}")
+        
+        try:
+            response = await self.client.get(
+                f"{self.MB_API}/recording",
+                params={
+                    "query": query,
+                    "limit": 3,
+                    "fmt": "json"
+                }
+            )
+            
+            if response.status_code != 200:
+                logger.warning(f"MB query failed: {response.status_code}")
+                return None
+                
+            data = response.json()
+            recordings = data.get("recordings", [])
+            
+            if not recordings:
+                logger.warning(f"MB query returned no recordings for: {title} - {artist}")
+                return None
+                
+            # Use top result
+            recording = recordings[0]
+            rec_id = recording.get("id")
+            
+            # Now fetch full details for this recording to get release info consistent with lookup_by_isrc logic
+            # OR just reuse what we found if it has releases attached (search usually doesn't include full release details)
+            # Better to do a lookup_recording or reuse logic.
+            # But the search result typically has 'releases' if we didn't ask for inc? Wait, search result structure is different.
+            
+            # Let's just return what we can find from the search result or do a secondary lookup
+            # Search results usually have a 'releases' list
+            releases = recording.get("releases", [])
+            if not releases:
+                logger.warning(f"MB recording found but has no releases: {title} - {artist}")
+                return None
+                
+            release = releases[0]
+            release_date = release.get("date", "")
+            
+            # Fallback to recording's first-release-date if release date is missing
+            if not release_date:
+                release_date = recording.get("first-release-date", "")
+            
+            result = {
+                "album": release.get("title", ""),
+                "release_date": release_date,
+                "release_id": release.get("id", ""),
+                "label": "",
+                "cover_art_url": "",
+                "genres": [tag.get("name") for tag in recording.get("tags", [])[:5]]
+            }
+            
+            # Try to get cover art
+            if result["release_id"]:
+                # Try specific release first
+                cover_url = await self._get_cover_art(result["release_id"])
+                
+                # Fallback to release group if missing
+                if not cover_url:
+                    release_group = release.get("release-group", {})
+                    rg_id = release_group.get("id")
+                    if rg_id:
+                        cover_url = await self._get_cover_art(rg_id, entity_type="release-group")
+
+                if cover_url:
+                    result["cover_art_url"] = cover_url
+                    
+            logger.info(f"MusicBrainz query found: {title} -> year={result['release_date']}")
+            return result
+            
+        except Exception as e:
+            logger.debug(f"MusicBrainz query error: {e}")
+            return None
     
-    async def _get_cover_art(self, release_id: str) -> Optional[str]:
+    async def _get_cover_art(self, mbid: str, entity_type: str = "release") -> Optional[str]:
         """Get cover art URL from Cover Art Archive."""
         try:
             response = await self.client.get(
-                f"{self.CAA_API}/release/{release_id}",
+                f"{self.CAA_API}/{entity_type}/{mbid}",
                 follow_redirects=True
             )
             
             if response.status_code != 200:
+                logger.warning(f"Cover Art Archive not 200 ({response.status_code}) for {entity_type}/{mbid}")
                 return None
             
             data = response.json()
@@ -180,9 +274,10 @@ class MusicBrainzService:
             if images:
                 return images[0].get("image")
             
+            logger.warning(f"Cover Art Archive response has no images for {entity_type}/{mbid}")
             return None
         except Exception as e:
-            logger.debug(f"Cover Art Archive error: {e}")
+            logger.warning(f"Cover Art Archive error for {entity_type}/{mbid}: {e}")
             return None
     
     async def close(self):

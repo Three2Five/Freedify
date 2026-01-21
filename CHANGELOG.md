@@ -10,6 +10,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.1.1] - 2026-01-21
+
+### Fixed
+- **Download Metadata**: Fixed "Album: test" overwriting actual album tags in playlist downloads via new Strict Mode logic
+- **Album Art**: Fixed missing art/metadata by adding automatic MusicBrainz fallback when primary source fails
+- **FLAC Duration**: Fixed 00:00 duration/seeking issues in VLC (corrected ffmpeg pipe handling)
+- **Stability**: Hardened backend against 404s and empty metadata fields
+
+---
+
 ## [1.1.0] - 2026-01-21
 
 ### Added

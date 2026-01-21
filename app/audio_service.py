@@ -451,7 +451,13 @@ class AudioService:
         """Embed metadata into audio file (MP3/FLAC)."""
         if not metadata: return audio_data
         
-        logger.info(f"Embedding metadata for {format}: {metadata.get('title')} - {metadata.get('year')}")
+        logger.info(f"Embedding metadata for {format}:")
+        logger.info(f"  Title: {metadata.get('title')}")
+        logger.info(f"  Artist: {metadata.get('artists')}")
+        logger.info(f"  Album: {metadata.get('album')}")
+        logger.info(f"  Year: {metadata.get('year')}")
+        logger.info(f"  Track#: {metadata.get('track_number')}/{metadata.get('total_tracks', '?')}")
+        logger.info(f"  Cover: {'Yes' if metadata.get('album_art_data') else 'No'}")
         
         try:
             suffix = ".flac" if format == "flac" else ".mp3"
@@ -467,7 +473,15 @@ class AudioService:
                 if metadata.get("artists"): audio["ARTIST"] = metadata["artists"]
                 if metadata.get("album"): audio["ALBUM"] = metadata["album"]
                 if metadata.get("year"): audio["DATE"] = str(metadata["year"])[:4]
-                if metadata.get("track_number"): audio["TRACKNUMBER"] = str(metadata["track_number"])
+                # Track number with total (e.g., "3/12")
+                if metadata.get("track_number"):
+                    track_num = str(metadata["track_number"])
+                    if metadata.get("total_tracks"):
+                        track_num = f"{metadata['track_number']}/{metadata['total_tracks']}"
+                    audio["TRACKNUMBER"] = track_num
+                if metadata.get("total_tracks"):
+                    audio["TRACKTOTAL"] = str(metadata["total_tracks"])
+                    audio["TOTALTRACKS"] = str(metadata["total_tracks"])
                 
                 if metadata.get("album_art_data"):
                     picture = Picture()
@@ -655,6 +669,10 @@ class AudioService:
             
             if isrc.startswith("dab_"):
                 dab_id = isrc
+                # Fetch track metadata by ID
+                dab_track = await dab_service.get_track(dab_id)
+                if dab_track:
+                    logger.info(f"Fetched Dab track metadata: {dab_track.get('name')} by {dab_track.get('artists')}")
             else:
                  # Search prioritization:
                  # Prefer standard query (Artist + Title) because ISRC support on Dab is flaky.
@@ -683,16 +701,16 @@ class AudioService:
                     # Use Dab metadata if available, otherwise fallback to query string
                     if dab_track:
                         metadata = {
-                            "title": dab_track.get("title"),
-                            "artists": dab_track.get("artist"),  # Changed from "artist" to "artists"
-                            "album": dab_track.get("albumTitle"),
-                            "year": dab_track.get("releaseDate", "")[:4] if dab_track.get("releaseDate") else "",
-                            "album_art_url": dab_track.get("albumCover"),
+                            "title": dab_track.get("name"),  # _format_track uses "name" not "title"
+                            "artists": dab_track.get("artists"),  # Already correct
+                            "album": dab_track.get("album"),  # _format_track uses "album" not "albumTitle"
+                            "year": dab_track.get("release_date", "")[:4] if dab_track.get("release_date") else "",
+                            "album_art_url": dab_track.get("album_art"),  # _format_track uses "album_art" not "albumCover"
                             "album_art_data": None
                         }
-                        # Ensure artists/album are strings
-                        if isinstance(metadata["artists"], dict): metadata["artists"] = metadata["artists"].get("name")
-                        if isinstance(metadata["album"], dict): metadata["album"] = metadata["album"].get("title")
+                        # Ensure artists/album are strings (should already be from _format_track)
+                        if isinstance(metadata["artists"], dict): metadata["artists"] = metadata["artists"].get("name", "")
+                        if isinstance(metadata["album"], dict): metadata["album"] = metadata["album"].get("title", "")
                         
                         # Download album art if URL is present
                         if metadata.get("album_art_url"):
@@ -941,16 +959,24 @@ class AudioService:
         """Transcode FLAC to specified format using FFmpeg."""
         config = self.FORMAT_CONFIG.get(format, self.FORMAT_CONFIG["mp3"])
         
+        # Use temporary file for output to ensure proper header/duration writing (especially for FLAC)
+        # FFmpeg cannot update FLAC header duration when writing to pipe
+        import tempfile
+        import os
+        
+        with tempfile.NamedTemporaryFile(suffix=config["ext"], delete=False) as tmp_out:
+            output_path = tmp_out.name
+        
         try:
             logger.info(f"Transcoding to {format} using FFmpeg at: {FFMPEG_PATH}")
-            # Note: flac_24 goes through FFmpeg to ensure proper sample format
 
             cmd = [
                 FFMPEG_PATH,
                 "-i", "pipe:0",      # Read from stdin
                 "-vn",               # No video
+                "-y"                 # Overwrite output file
             ] + config["args"] + [
-                "pipe:1"             # Write to stdout
+                output_path          # Write to file
             ]
             
             process = subprocess.Popen(
@@ -960,23 +986,39 @@ class AudioService:
                 stderr=subprocess.PIPE
             )
             
-            output_data, stderr = process.communicate(input=flac_data)
+            _, stderr = process.communicate(input=flac_data)
             
             if process.returncode != 0:
-                logger.error(f"FFmpeg error: {stderr.decode()[:500]}")
+                logger.error(f"FFmpeg error: {stderr.decode('utf-8', errors='ignore')[:500]}")
+                if os.path.exists(output_path): os.unlink(output_path)
                 return None
             
-            logger.info(f"Transcoded to {format}: {len(output_data) / 1024 / 1024:.2f} MB")
-            return output_data
+            if os.path.exists(output_path):
+                size_mb = os.path.getsize(output_path) / 1024 / 1024
+                logger.info(f"Transcoded to {config['ext']}: {size_mb:.2f} MB")
+                
+                with open(output_path, "rb") as f:
+                    output_data = f.read()
+                return output_data
+            else:
+                logger.error("Transcoding failed: Output file not created")
+                return None
             
         except FileNotFoundError:
-            logger.error("FFmpeg not found!")
+            logger.error("FFmpeg not found! Please install FFmpeg.")
             return None
         except Exception as e:
             logger.error(f"Transcode error: {e}")
             return None
+        finally:
+            if os.path.exists(output_path):
+                try:
+                    os.unlink(output_path)
+                except: pass
+            
+
     
-    async def get_download_audio(self, isrc: str, query: str, format: str = "mp3", track_number: Optional[int] = None) -> Optional[tuple]:
+    async def get_download_audio(self, isrc: str, query: str, format: str = "mp3", track_number: Optional[int] = None, provided_metadata: Optional[Dict] = None) -> Optional[tuple]:
         """Get audio in specified format for download. Returns (data, extension, mime_type)."""
         
         config = self.FORMAT_CONFIG.get(format, self.FORMAT_CONFIG["mp3"])
@@ -1016,17 +1058,50 @@ class AudioService:
                 logger.error(f"Stream URL download error: {e}")
                 return None
         
+        # Use provided_metadata from frontend if available (overrides fetched metadata)
+        if provided_metadata:
+            logger.info(f"Using provided metadata from frontend")
+            # Override empty/missing fields with provided metadata
+            if not metadata.get("title") or metadata.get("title") == query:
+                metadata["title"] = provided_metadata.get("title") or metadata.get("title")
+            if not metadata.get("artists"):
+                metadata["artists"] = provided_metadata.get("artists") or metadata.get("artists")
+            if not metadata.get("album"):
+                metadata["album"] = provided_metadata.get("album") or metadata.get("album")
+            if not metadata.get("year"):
+                metadata["year"] = provided_metadata.get("year") or metadata.get("year")
+            # Download album art from provided URL if we don't have art data
+            if not metadata.get("album_art_data") and provided_metadata.get("album_art_url"):
+                try:
+                    art_resp = await self.client.get(provided_metadata["album_art_url"])
+                    if art_resp.status_code == 200:
+                        metadata["album_art_data"] = art_resp.content
+                        logger.info("Downloaded album art from provided URL")
+                except Exception as e:
+                    logger.debug(f"Failed to download provided album art: {e}")
+        
         # Add track number if provided
         if track_number is not None:
             metadata["track_number"] = track_number
             logger.info(f"Setting track number: {track_number}")
         
+        # Add total tracks from provided_metadata if available
+        if provided_metadata and provided_metadata.get("total_tracks"):
+            metadata["total_tracks"] = provided_metadata["total_tracks"]
+        
         # Enrich metadata with MusicBrainz (release year, label, better cover art)
         try:
             from app.musicbrainz_service import musicbrainz_service
             mb_data = await musicbrainz_service.lookup_by_isrc(isrc)
+            
+            # Fallback to query if no result by ISRC (common for dab_ ids)
+            if not mb_data and (not metadata.get("year") or not metadata.get("album_art_data")):
+                mb_data = await musicbrainz_service.lookup_by_query(metadata.get("title"), metadata.get("artists"))
+            
             if mb_data:
                 # Fill in missing fields from MusicBrainz
+                if not metadata.get("album") and mb_data.get("album"):
+                    metadata["album"] = mb_data["album"]
                 if not metadata.get("year") and mb_data.get("release_date"):
                     metadata["year"] = mb_data["release_date"]
                 if mb_data.get("label"):
@@ -1038,7 +1113,10 @@ class AudioService:
                         if cover_resp.status_code == 200:
                             metadata["album_art_data"] = cover_resp.content
                             logger.info("Using cover art from Cover Art Archive")
-                    except: pass
+                        else:
+                            logger.warning(f"MB cover art download failed: {cover_resp.status_code} for {mb_data['cover_art_url']}")
+                    except Exception as e:
+                        logger.error(f"Failed to download MB cover art: {e}")
         except Exception as e:
             logger.debug(f"MusicBrainz enrichment skipped: {e}")
         

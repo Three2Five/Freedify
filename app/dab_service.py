@@ -123,7 +123,16 @@ class DabService:
                 # Check for nested 'album' key which is common in getAlbum/album endpoints
                 album_data = data.get("album", data)
                 
+                # Debug logging for album metadata
+                logger.info(f"Dab Raw Album Data keys: {album_data.keys()}")
+                logger.info(f"Dab Raw Album Release Date: {album_data.get('releaseDate')} / {album_data.get('release_date')}")
+                logger.info(f"Dab Raw Album Images: {album_data.get('images')}")
+                logger.info(f"Dab Raw Album Cover: {album_data.get('cover')}")
+                
                 album = self._format_album(album_data)
+                
+                # Log formatted album data
+                logger.info(f"Formatted Dab Album: year={album.get('release_date')}, art={album.get('album_art')}")
                 
                 tracks = []
                 # Tracks are usually inside the album object or 'tracks' key
@@ -197,6 +206,7 @@ class DabService:
             cover = images.get("large") or images.get("medium") 
         
         if not cover: cover = item.get("cover") # Fallback to top level
+        if not cover: cover = item.get("image", {}).get("large") # Another possible structure
         
         if isinstance(cover, dict): cover = cover.get("large") # Handle nested cases
 
@@ -204,11 +214,16 @@ class DabService:
         artist_obj = item.get("artist")
         if isinstance(artist_obj, dict):
             artist_name = artist_obj.get("name")
+        elif isinstance(artist_obj, list) and artist_obj:
+             artist_name = artist_obj[0].get("name")
         else:
-            artist_name = artist_obj
+            artist_name = artist_obj or item.get("artistName")
 
         # Extract audio quality info
         audio_quality = item.get("audioQuality", {})
+        
+        # Robust release date extraction
+        release_date = item.get("releaseDate") or item.get("release_date") or item.get("date") or ""
         
         return {
             "id": f"dab_{item.get('id')}",
@@ -216,8 +231,8 @@ class DabService:
             "name": item.get("title", ""),
             "artists": artist_name,
             "album_art": cover,
-            "release_date": item.get("releaseDate", ""),
-            "total_tracks": item.get("trackCount", 0),
+            "release_date": release_date,
+            "total_tracks": item.get("trackCount") or item.get("tracksCount") or 0,
             "source": "dab",
             "is_hi_res": audio_quality.get("isHiRes", False),
             "audio_quality": {
@@ -233,6 +248,35 @@ class DabService:
         minutes = seconds // 60
         secs = seconds % 60
         return f"{minutes}:{secs:02d}"
+
+    async def get_track(self, track_id: str) -> Optional[Dict[str, Any]]:
+        """Get track details by ID."""
+        self._ensure_initialized()
+        try:
+            clean_id = str(track_id).replace("dab_", "")
+            # Try getTrack endpoint first
+            resp = await self.client.get(
+                f"{self.BASE_URL}/getTrack",
+                params={"trackId": clean_id}
+            )
+            if resp.status_code != 200:
+                # Fallback to track endpoint
+                resp = await self.client.get(
+                    f"{self.BASE_URL}/track",
+                    params={"trackId": clean_id}
+                )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                # Check for nested 'track' key
+                track_data = data.get("track", data)
+                return self._format_track(track_data)
+            
+            logger.warning(f"Dab get_track failed: {resp.status_code}")
+            return None
+        except Exception as e:
+            logger.error(f"Dab get_track error: {e}")
+            return None
 
     async def get_stream_url(self, track_id: str, quality: str = "27") -> Optional[str]:
         """Get stream URL for a track. Quality 27=Hi-Res, 7=Lossless."""

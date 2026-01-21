@@ -907,11 +907,16 @@ class BatchDownloadRequest(BaseModel):
     tracks: List[str]  # List of ISRCs or IDs
     names: List[str]   # List of track names for filenames
     artists: List[str] # List of artist names
-    album_name: str
+    album_name: Optional[str] = None
+    zip_name: Optional[str] = None
     format: str = "mp3"
     part: int = 1          # Part number for multi-part downloads
     total_parts: int = 1   # Total number of parts
     download_id: Optional[str] = None # Unique ID for progress tracking
+    # Optional metadata for embedding (from frontend)
+    album_art_urls: Optional[List[str]] = None  # Cover art URLs per track
+    release_year: Optional[str] = None  # Album release year
+    is_playlist: bool = False
 
 
 @app.get("/api/progress/{download_id}")
@@ -924,7 +929,9 @@ async def get_progress(download_id: str):
 async def download_batch(request: BatchDownloadRequest):
     """Download multiple tracks as a ZIP file."""
     try:
-        logger.info(f"Batch download request: {len(request.tracks)} tracks from {request.album_name}")
+        final_name = request.zip_name or request.album_name or "download"
+        logger.info(f"Batch download request: {len(request.tracks)} tracks from {final_name}")
+        logger.info(f"Metadata Tag: {request.album_name} | Zip Name: {final_name}")
         
         # In-memory ZIP buffer
         zip_buffer = io.BytesIO()
@@ -951,12 +958,27 @@ async def download_batch(request: BatchDownloadRequest):
                 
                 try:
                     query = f"{request.names[i]} {request.artists[i]}"
-                    # Pass track number (1-indexed) for metadata
+                    
+                    # Build metadata from request (frontend provides this)
+                    provided_metadata = {
+                        "title": request.names[i],
+                        "artists": request.artists[i],
+                        "album": request.album_name,  # Only set if we want to overwrite tag
+                        "year": request.release_year or "",
+                        "album_art_url": request.album_art_urls[i] if request.album_art_urls and i < len(request.album_art_urls) else None,
+                        "total_tracks": len(request.tracks) * request.total_parts if request.album_name else None
+                    }
+                    
+                    # Debug log what we received
+                    logger.info(f"Provided metadata - year: '{request.release_year}', art_url: {provided_metadata['album_art_url'][:50] if provided_metadata['album_art_url'] else 'None'}...")
+                    
+                    # Pass track number (1-indexed) and metadata
                     result = await audio_service.get_download_audio(
                         isrc, 
                         query, 
                         request.format,
-                        track_number=i+1  # 1-indexed track number
+                        track_number=i+1,  # 1-indexed track number
+                        provided_metadata=provided_metadata
                     )
                     
                     if result:
@@ -984,7 +1006,8 @@ async def download_batch(request: BatchDownloadRequest):
             del download_progress[request.download_id]
         
         zip_buffer.seek(0)
-        safe_album = request.album_name.replace("/", "_").replace("\\", "_").replace(":", "_")
+        final_name = request.zip_name or request.album_name or "download"
+        safe_album = final_name.replace("/", "_").replace("\\", "_").replace(":", "_")
         
         # Name ZIP with part number if it's a multi-part download
         if request.total_parts > 1:

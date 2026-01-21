@@ -3,7 +3,7 @@
  * Enhanced search with albums, artists, playlists, and Spotify URL support
  */
 
-console.log('🔥 FREEDIFY APP.JS VERSION: 2026-01-18-v2 🔥');
+console.log('🔥 FREEDIFY APP.JS VERSION: 2026-01-21-STRICT-MODE-V2 🔥');
 
 // ========== STATE ==========
 const state = {
@@ -14,6 +14,9 @@ const state = {
     detailTracks: [],  // Tracks in current detail view
     detailName: '',    // Name of current album/playlist for downloads
     detailArtist: '',  // Artist of current album for downloads
+    detailReleaseYear: '',  // Release year for downloads
+    detailCover: null,      // Album cover URL for downloads
+    detailType: 'album',    // 'album' or 'playlist' for download logic
     repeatMode: 'none', // 'none' | 'all' | 'one'
     volume: parseFloat(localStorage.getItem('freedify_volume')) || 1,
     muted: false,
@@ -926,11 +929,22 @@ downloadConfirmBtn.addEventListener('click', async () => {
                             tracks: chunkTracks.map(t => t.isrc || t.id),
                             names: chunkTracks.map(t => t.name),
                             artists: chunkTracks.map(t => t.artists),
-                            album_name: albumName,
+                            
+                            // CLEANUP: Separate ZIP name from Album Tag
+                            zip_name: albumName, // The name of the ZIP file (Playlist Name or Album Name)
+                            
+                            // SILVER BULLET: even if type='album', if there is no YEAR, it is a "Zombie Album" (Playlist).
+                            // Only tag it if we have a valid year.
+                            album_name: (state.detailType === 'album' && (state.detailReleaseYear || chunkTracks[0]?.release_date)) ? albumName : null,
+                            
                             format: format,
                             part: part,
                             total_parts: totalParts,
-                            download_id: downloadId
+                            download_id: downloadId,
+                            
+                            // Metadata for embedding
+                            album_art_urls: chunkTracks.map(t => t.album_art || t.image || state.detailCover || null),
+                            release_year: state.detailReleaseYear || (chunkTracks[0]?.release_date?.substring(0, 4)) || '',
                         })
                     });
                     
@@ -1453,6 +1467,9 @@ function showDetailView(item, tracks) {
     
     // Store name and artist for batch downloads
     state.detailName = item.name || 'Playlist';
+    // Determine type: Only force album tagging if explicitly an album AND has a release date.
+    // Playlists, Artists, and Custom Lists should preserve original track album tags.
+    state.detailType = (item.type === 'album' && item.release_date) ? 'album' : 'playlist';
     
     // Handle owner if it's an object (Spotify playlist) or string
     let artistName = item.artists || '';
@@ -1461,7 +1478,10 @@ function showDetailView(item, tracks) {
     }
     state.detailArtist = artistName || '';
     
-    const isUserPlaylist = item.is_user_playlist || false;
+    // Store release year for metadata embedding
+    state.detailReleaseYear = item.release_date?.substring(0, 4) || '';
+    // Store cover art for metadata embedding (fallback for tracks)
+    state.detailCover = item.album_art || item.image || null;
     
     // Render info section
     const isArtist = item.type === 'artist';
