@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 BITRATE = os.environ.get("MP3_BITRATE", "320k")
 DEEZER_API_URL = os.environ.get("DEEZER_API_URL", "https://api.deezmate.com")
+USER_AGENT = "Freedify/1.0 (Cross-Platform; Python) httpx/0.27"
 
 # FFmpeg path - check common locations on Windows
 FFMPEG_PATH = os.environ.get("FFMPEG_PATH", "ffmpeg")
@@ -37,17 +38,18 @@ if os.name == 'nt' and FFMPEG_PATH == "ffmpeg":
                 FFMPEG_PATH = os.path.join(root, "ffmpeg.exe")
                 break
 
-# List of Tidal API endpoints with fallback (fastest/most reliable first)
+# List of Tidal API endpoints with fallback (ordered by reliability/weight)
 TIDAL_APIS = [
-    "https://triton.squid.wtf",  # From Monochrome - fast primary
-    "https://hifi.401658.xyz",
-    "https://tidal.kinoplus.online",
-    "https://tidal-api.binimum.org",
-    "https://wolf.qqdl.site",
+    "https://triton.squid.wtf",           # Primary - squid-api (weight 30)
+    "https://hifi-one.spotisaver.net",    # spotisaver cluster (weight 20)
+    "https://hifi-two.spotisaver.net",    # spotisaver cluster (weight 20)
+    "https://tidal.kinoplus.online",      # kinoplus (weight 20)
+    "https://tidal-api.binimum.org",      # binimum (weight 10)
+    "https://hund.qqdl.site",             # qqdl cluster (weight 15)
+    "https://katze.qqdl.site",
     "https://maus.qqdl.site",
     "https://vogel.qqdl.site",
-    "https://katze.qqdl.site",
-    "https://hund.qqdl.site",
+    "https://wolf.qqdl.site",
 ]
 
 
@@ -279,7 +281,12 @@ class AudioService:
         # Enable redirect following and increase timeout
         # Using a shared client with a connection pool to avoid socket exhaustion
         limits = httpx.Limits(max_keepalive_connections=50, max_connections=100)
-        self.client = httpx.AsyncClient(timeout=60.0, follow_redirects=True, limits=limits)
+        self.client = httpx.AsyncClient(
+            timeout=60.0, 
+            follow_redirects=True, 
+            limits=limits,
+            headers={"User-Agent": USER_AGENT}
+        )
         
         self.tidal_token: Optional[str] = None
         self.working_api: Optional[str] = None  # Cache the last working API
@@ -993,6 +1000,21 @@ class AudioService:
             return None
             
         flac_data, metadata = result
+        
+        # If flac_data is a URL string (from Dab service), download the actual audio
+        if isinstance(flac_data, str) and flac_data.startswith("http"):
+            logger.info(f"Downloading audio from stream URL for batch download...")
+            try:
+                response = await self.client.get(flac_data, timeout=180.0)
+                if response.status_code == 200:
+                    flac_data = response.content
+                    logger.info(f"Downloaded {len(flac_data) / 1024 / 1024:.2f} MB from stream URL")
+                else:
+                    logger.error(f"Failed to download from stream URL: HTTP {response.status_code}")
+                    return None
+            except Exception as e:
+                logger.error(f"Stream URL download error: {e}")
+                return None
         
         # Add track number if provided
         if track_number is not None:

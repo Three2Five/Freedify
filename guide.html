@@ -126,6 +126,10 @@
             <h3>Just run:</h3>
             <pre><code>docker run -d -p 8000:8000 biohaphazard/freedify:latest</code></pre>
             <p>Then open <a href="http://localhost:8000" target="_blank">http://localhost:8000</a> 🎵</p>
+            
+            <div class="note">
+                <strong>🍓 ARM64 Supported:</strong> Works on Raspberry Pi, Apple Silicon (M1/M2/M3), and ARM servers!
+            </div>
         </div>
 
         <!-- Option 1: Localhost -->
@@ -155,6 +159,30 @@
                 </li>
                 <li>Visit <a href="http://localhost:8000" target="_blank">http://localhost:8000</a> 🎵</li>
             </ol>
+        </div>
+
+        <!-- Option: Termux (Android) -->
+        <div class="card">
+            <h2>📱 Termux (Android)</h2>
+            <p><strong>Best for:</strong> Running directly on your Android phone/tablet.</p>
+            
+            <h3>Steps</h3>
+            <ol>
+                <li>Install <a href="https://termux.dev/" target="_blank">Termux</a> from F-Droid.</li>
+                <li>Install dependencies:
+                    <pre><code>pkg install python ffmpeg git
+pip install -r app/requirements.txt</code></pre>
+                </li>
+                <li>Clone and run:
+                    <pre><code>git clone https://github.com/BioHapHazard/Freedify
+cd Freedify
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000</code></pre>
+                </li>
+                <li>Open <code>http://localhost:8000</code> in your phone's browser 🎵</li>
+            </ol>
+            <div class="note">
+                <strong>💡 Tip:</strong> Cache defaults to <code>~/.freedify_cache</code>. Use <code>CACHE_DIR=~/path</code> to customize.
+            </div>
         </div>
 
         <!-- Option 2: Railway -->

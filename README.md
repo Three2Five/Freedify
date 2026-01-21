@@ -17,6 +17,8 @@ docker run -d -p 8000:8000 biohaphazard/freedify:latest
 
 Open [http://localhost:8000](http://localhost:8000) and start streaming! 🎵
 
+> **ARM64 Supported:** Works on Raspberry Pi, Apple Silicon (M1/M2/M3), and ARM servers!
+
 ## ✨ Features
 
 ### 🎧 HiFi & Hi-Res Streaming
@@ -265,6 +267,26 @@ python -m uvicorn app.main:app --port 8000
 ```
 
 Open http://localhost:8000
+
+---
+
+## 📱 Running on Termux (Android)
+
+Freedify can run directly on Android using [Termux](https://termux.dev/):
+
+```bash
+# Install dependencies
+pkg install python ffmpeg
+pip install -r app/requirements.txt
+
+# Run the server
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+> **Note:** The cache directory defaults to `~/.freedify_cache`. If you need a custom location, set `CACHE_DIR`:
+> ```bash
+> CACHE_DIR=~/my_cache python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+> ```
 
 ---
 

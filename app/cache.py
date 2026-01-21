@@ -13,7 +13,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Cache configuration
-CACHE_DIR = Path(os.environ.get("CACHE_DIR", "/tmp/spotiflac_cache"))
+# Use home directory for better cross-platform compatibility (works on Termux/Android)
+_default_cache = os.path.join(os.path.expanduser("~"), ".freedify_cache")
+CACHE_DIR = Path(os.environ.get("CACHE_DIR", _default_cache))
 MAX_CACHE_SIZE_MB = int(os.environ.get("MAX_CACHE_SIZE_MB", "500"))
 CACHE_TTL_HOURS = int(os.environ.get("CACHE_TTL_HOURS", "24"))
 
