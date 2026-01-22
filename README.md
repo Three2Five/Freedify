@@ -1,6 +1,6 @@
 # Freedify - Music Streaming Web App
 
-*Last updated: January 18, 2026*
+*Last updated: January 22, 2026*
 
 Stream music and podcasts from anywhere. **Generate smart playlists with AI**, search songs, albums, artists, podcasts or paste URLs from Spotify, SoundCloud, Bandcamp, Archive.org, Phish.in, and more.
 
@@ -116,12 +116,24 @@ Open [http://localhost:8000](http://localhost:8000) and start streaming! 🎵
 - **Queue Persistence** - Queue survives page refresh (saved to localStorage)
 - **Volume Memory** - Volume level remembered between sessions
 
-### Playlists
+### 🎵 Jump Back In Dashboard
+- **Personalized Home** - Home screen shows recent albums, artists, library, and playlists
+- **Quick Resume** - Click any item to instantly start playing
+- **Smart History** - Tracks last 50 played songs automatically
+- **Cross-Device** - History and library sync via Google Drive
+
+### ⭐ My Library
+- **Star to Save** - Click ★ on any track to save to your Library (separate from playlists)
+- **Quick Access** - Library section on dashboard shows your starred tracks
+- **Full Library View** - Click "See All" to browse your entire collection
+- **Synced** - Library syncs to Google Drive alongside playlists
+
+### 📋 Playlists
 - **Add to Playlist** - Click the heart icon on any track to add it to a playlist
 - **Create Playlists** - Create new playlists on the fly from the Add to Playlist modal
 - **Playlists Tab** - Click **More → Playlists** to view all saved playlists
 - **Delete Songs** - Remove individual songs from any playlist
-- **Google Drive Sync** - Playlists sync to Google Drive for access across all your devices
+- **Google Drive Sync** - Playlists, Library, and History sync to Google Drive
 - **Local Backup** - Also stored in browser localStorage (survives restarts)
 - **Delete Playlists** - Hover over playlist and click 🗑️ to remove
 

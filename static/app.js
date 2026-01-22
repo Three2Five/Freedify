@@ -29,6 +29,8 @@ const state = {
     sortOrder: 'newest', // 'newest' or 'oldest' for album sorting
     lastSearchResults: [], // Store last search results for re-rendering
     lastSearchType: 'track', // Store last search type
+    history: JSON.parse(localStorage.getItem('freedify_history') || '[]'), // Listening history (last 50)
+    library: JSON.parse(localStorage.getItem('freedify_library') || '[]'), // Saved/starred tracks
 };
 
 // ========== iOS AUDIO KEEPALIVE ==========
@@ -107,8 +109,8 @@ document.addEventListener('click', (e) => {
     const trackItem = e.target.closest('#detail-tracks .track-item');
     if (!trackItem) return;
     
-    // Don't play if clicking buttons
-    if (e.target.closest('.download-btn') || e.target.closest('.delete-track-btn') || e.target.closest('.info-btn')) return;
+    // Don't play if clicking buttons (including star button)
+    if (e.target.closest('.download-btn') || e.target.closest('.delete-track-btn') || e.target.closest('.info-btn') || e.target.closest('.star-btn')) return;
     
     const index = parseInt(trackItem.dataset.index, 10);
     if (isNaN(index)) return;
@@ -147,6 +149,47 @@ document.addEventListener('click', (e) => {
         setTimeout(preloadNextTrack, 500);
     } else {
         loadTrack(clickedTrack);
+    }
+});
+
+// Global Event Delegation for Star (Library) Buttons
+document.addEventListener('click', (e) => {
+    const starBtn = e.target.closest('.star-btn');
+    if (!starBtn) return;
+    
+    e.stopPropagation();
+    const trackId = starBtn.dataset.trackId;
+    if (!trackId) return;
+    
+    // Find track data from wherever we can
+    let track = state.history.find(t => t.id === trackId) 
+             || state.library.find(t => t.id === trackId)
+             || state.detailTracks.find(t => t.id === trackId)
+             || state.queue.find(t => t.id === trackId)
+             || state.lastSearchResults.find(t => t.id === trackId);
+    
+    if (!track) {
+        // Try to get from the track item's data attributes
+        const trackItem = starBtn.closest('.track-item');
+        if (trackItem) {
+            const nameEl = trackItem.querySelector('.track-name');
+            const artistEl = trackItem.querySelector('.track-artist');
+            const artEl = trackItem.querySelector('.track-album-art');
+            track = {
+                id: trackId,
+                name: nameEl?.textContent || 'Unknown',
+                artists: artistEl?.textContent || '',
+                album_art: artEl?.src || '/static/icon.svg',
+                isrc: trackId
+            };
+        }
+    }
+    
+    if (track) {
+        const nowStarred = toggleLibrary(track);
+        starBtn.textContent = nowStarred ? '★' : '☆';
+        starBtn.classList.toggle('starred', nowStarred);
+        starBtn.title = nowStarred ? 'Remove from Library' : 'Add to Library';
     }
 });
 
@@ -400,6 +443,99 @@ function deletePlaylist(playlistId) {
     showToast('Playlist deleted');
     renderPlaylistsView();
 }
+
+// ========== LISTENING HISTORY ==========
+function saveHistory() {
+    localStorage.setItem('freedify_history', JSON.stringify(state.history));
+}
+
+function addToHistory(track) {
+    if (!track || !track.id) return;
+    
+    const historyEntry = {
+        id: track.id,
+        name: track.name,
+        artists: track.artists,
+        album: track.album || '',
+        album_art: track.album_art || track.image || '/static/icon.svg',
+        isrc: track.isrc || track.id,
+        duration: track.duration || '0:00',
+        listenedAt: Date.now()
+    };
+    
+    // Remove existing entry for same track (to move it to top)
+    state.history = state.history.filter(h => h.id !== track.id);
+    
+    // Add to beginning
+    state.history.unshift(historyEntry);
+    
+    // Limit to 50 entries
+    if (state.history.length > 50) {
+        state.history = state.history.slice(0, 50);
+    }
+    
+    saveHistory();
+}
+
+// ========== MY LIBRARY (STARRED TRACKS) ==========
+function saveLibrary() {
+    localStorage.setItem('freedify_library', JSON.stringify(state.library));
+}
+
+function addToLibrary(track) {
+    if (!track || !track.id) return false;
+    
+    // Check if already in library
+    if (state.library.some(t => t.id === track.id)) {
+        return false; // Already exists
+    }
+    
+    const libraryEntry = {
+        id: track.id,
+        name: track.name,
+        artists: track.artists,
+        album: track.album || '',
+        album_art: track.album_art || track.image || '/static/icon.svg',
+        isrc: track.isrc || track.id,
+        duration: track.duration || '0:00',
+        addedAt: Date.now()
+    };
+    
+    state.library.unshift(libraryEntry);
+    saveLibrary();
+    showToast(`★ Added "${track.name}" to Library`);
+    return true;
+}
+
+function removeFromLibrary(trackId) {
+    const idx = state.library.findIndex(t => t.id === trackId);
+    if (idx !== -1) {
+        const track = state.library[idx];
+        state.library.splice(idx, 1);
+        saveLibrary();
+        showToast(`Removed "${track.name}" from Library`);
+        return true;
+    }
+    return false;
+}
+
+function isInLibrary(trackId) {
+    return state.library.some(t => t.id === trackId);
+}
+
+function toggleLibrary(track) {
+    if (isInLibrary(track.id)) {
+        removeFromLibrary(track.id);
+        return false;
+    } else {
+        addToLibrary(track);
+        return true;
+    }
+}
+
+// Expose for use in UI
+window.toggleLibrary = toggleLibrary;
+window.isInLibrary = isInLibrary;
 
 function renderPlaylistsView() {
     hideLoading();
@@ -1047,6 +1183,7 @@ downloadConfirmBtn.addEventListener('click', async () => {
 
 function renderTrackCard(track) {
     const year = track.release_date ? track.release_date.slice(0, 4) : '';
+    const isStarred = isInLibrary(track.id);
     // Use horizontal list item layout
     return `
         <div class="track-item" data-id="${track.id}">
@@ -1056,6 +1193,7 @@ function renderTrackCard(track) {
                 <div class="track-artist">${escapeHtml(track.artists)}</div>
             </div>
             <span class="track-duration">${track.duration_ms ? formatTime(track.duration_ms / 1000) : (track.duration && track.duration.toString().includes(':') ? track.duration : formatTime(track.duration))}</span>
+            <button class="star-btn ${isStarred ? 'starred' : ''}" data-track-id="${track.id}" title="${isStarred ? 'Remove from Library' : 'Add to Library'}">${isStarred ? '★' : '☆'}</button>
             <button class="track-action-btn queue-btn" title="Add to Queue">+</button>
         </div>
     `;
@@ -1358,13 +1496,16 @@ function showAlbumModal(album) {
     
     // Render track list
     const tracksContainer = $('#album-modal-tracks');
-    tracksContainer.innerHTML = tracks.map((track, i) => `
+    tracksContainer.innerHTML = tracks.map((track, i) => {
+        const isStarred = isInLibrary(track.id);
+        return `
         <div class="album-modal-track" data-index="${i}">
             <span class="album-track-num">${i + 1}.</span>
             <button class="album-track-play" title="Play" data-index="${i}">▶</button>
             <div class="album-track-info">
                 <p class="album-track-name">${escapeHtml(track.name)}</p>
             </div>
+            <button class="star-btn ${isStarred ? 'starred' : ''}" data-track-id="${track.id}" data-index="${i}" title="${isStarred ? 'Remove from Library' : 'Add to Library'}">${isStarred ? '★' : '☆'}</button>
             <button class="album-track-playlist" title="Add to Playlist" data-index="${i}">♡</button>
             <span class="album-track-duration">${track.duration || '--:--'}</span>
             <div class="album-track-actions">
@@ -1372,7 +1513,7 @@ function showAlbumModal(album) {
                 <button title="Download" data-action="download" data-index="${i}">⬇</button>
             </div>
         </div>
-    `).join('');
+    `}).join('');
     
     // Track click handlers
     tracksContainer.querySelectorAll('.album-track-play').forEach(btn => {
@@ -1421,6 +1562,21 @@ function showAlbumModal(album) {
             // Store album data so we can reopen after download closes
             state.pendingAlbumReopen = { album, tracks };
             openDownloadModal(encodeURIComponent(JSON.stringify(tracks[idx])));
+        });
+    });
+    
+    // Star button handler for album modal
+    tracksContainer.querySelectorAll('.star-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.index);
+            const track = tracks[idx];
+            if (track) {
+                const nowStarred = toggleLibrary(track);
+                btn.textContent = nowStarred ? '★' : '☆';
+                btn.classList.toggle('starred', nowStarred);
+                btn.title = nowStarred ? 'Remove from Library' : 'Add to Library';
+            }
         });
     });
     
@@ -1500,7 +1656,9 @@ function showDetailView(item, tracks) {
     `;
     
     // Render tracks with download button (and delete for user playlists)
-    detailTracks.innerHTML = tracks.map((t, i) => `
+    detailTracks.innerHTML = tracks.map((t, i) => {
+        const isStarred = isInLibrary(t.id);
+        return `
         <div class="track-item" data-index="${i}" data-track-id="${t.id}">
             <img class="track-album-art" src="${t.album_art || image}" alt="Art" loading="lazy">
             <div class="track-info">
@@ -1511,6 +1669,7 @@ function showDetailView(item, tracks) {
             <div class="track-actions">
                 ${renderDJBadgeForTrack(t)}
                 <span class="track-duration">${t.duration}</span>
+                <button class="star-btn ${isStarred ? 'starred' : ''}" data-track-id="${t.id}" title="${isStarred ? 'Remove from Library' : 'Add to Library'}">${isStarred ? '★' : '☆'}</button>
                 ${t.source === 'podcast' ? `
                 <button class="info-btn" title="Episode Details" onclick="event.stopPropagation(); showPodcastModal('${encodeURIComponent(JSON.stringify(t))}')">ℹ️</button>
                 ` : ''}
@@ -1524,7 +1683,7 @@ function showDetailView(item, tracks) {
                 ` : ''}
             </div>
         </div>
-    `).join('');
+    `}).join('');
     
     // Show detail view
     detailView.classList.remove('hidden');
@@ -1748,7 +1907,9 @@ function showDetailView(item, tracks) {
     }
     
     // Render tracks
-    detailTracks.innerHTML = tracks.map((t, i) => `
+    detailTracks.innerHTML = tracks.map((t, i) => {
+        const isStarred = isInLibrary(t.id);
+        return `
         <div class="track-item" data-index="${i}">
             <img class="track-album-art" src="${t.album_art || image}" alt="Art" loading="lazy">
             <div class="track-info">
@@ -1756,8 +1917,9 @@ function showDetailView(item, tracks) {
                 <p class="track-artist">${escapeHtml(t.artists)}</p>
             </div>
             <span class="track-duration">${t.duration}</span>
+            <button class="star-btn ${isStarred ? 'starred' : ''}" data-track-id="${t.id}" title="${isStarred ? 'Remove from Library' : 'Add to Library'}">${isStarred ? '★' : '☆'}</button>
         </div>
-    `).join('');
+    `}).join('');
     
     // Add click handlers
     $$('#detail-tracks .track-item').forEach((el, i) => {
@@ -2175,6 +2337,9 @@ async function loadTrack(track) {
         updatePlayButton();
         updateMediaSession(track);
         
+        // Track listening history
+        addToHistory(track);
+        
         // Detect audio format and update badge
         updateFormatBadge(player.src);
         
@@ -2263,6 +2428,7 @@ function playNext() {
             performGaplessSwitch();
             updateFormatBadge(getActivePlayer().src);
             updateMediaSession(state.queue[state.currentIndex]);
+            addToHistory(state.queue[state.currentIndex]);
             setTimeout(preloadNextTrack, 500);
         } else {
             loadTrack(state.queue[state.currentIndex]);
@@ -2702,14 +2868,174 @@ errorRetry.addEventListener('click', () => {
 });
 
 function showEmptyState() {
-    resultsContainer.innerHTML = `
-        <div class="empty-state">
-            <span class="empty-icon">🔍</span>
-            <p>Search for your favorite music</p>
-            <p class="hint">Or paste a Spotify link to an album or playlist</p>
-        </div>
-    `;
+    // Check if we have any history or playlists to show
+    const hasHistory = state.history && state.history.length > 0;
+    const hasPlaylists = state.playlists && state.playlists.length > 0;
+    const hasLibrary = state.library && state.library.length > 0;
+    
+    // If no data, show default empty state
+    if (!hasHistory && !hasPlaylists && !hasLibrary) {
+        resultsContainer.innerHTML = `
+            <div class="empty-state">
+                <span class="empty-icon">🔍</span>
+                <p>Search for your favorite music</p>
+                <p class="hint">Or paste a Spotify link to an album or playlist</p>
+            </div>
+        `;
+        return;
+    }
+    
+    // Build dashboard HTML
+    let html = '<div class="dashboard">';
+    
+    // Section 1: Jump Back In (Recent Albums from History)
+    if (hasHistory) {
+        // Get unique albums from history
+        const seenAlbums = new Set();
+        const recentAlbums = [];
+        for (const track of state.history) {
+            const albumKey = track.album || track.artists;
+            if (!seenAlbums.has(albumKey) && recentAlbums.length < 8) {
+                seenAlbums.add(albumKey);
+                recentAlbums.push(track);
+            }
+        }
+        
+        if (recentAlbums.length > 0) {
+            html += `
+                <section class="dashboard-section">
+                    <h3 class="dashboard-title">🎵 Jump Back In</h3>
+                    <div class="dashboard-grid">
+                        ${recentAlbums.map(track => `
+                            <div class="dashboard-card" data-track-id="${track.id}" onclick="playHistoryTrack('${track.id}')">
+                                <img src="${track.album_art || '/static/icon.svg'}" alt="${escapeHtml(track.album || track.name)}" loading="lazy">
+                                <div class="dashboard-card-info">
+                                    <p class="dashboard-card-title">${escapeHtml(track.album || track.name)}</p>
+                                    <p class="dashboard-card-subtitle">${escapeHtml(track.artists)}</p>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </section>
+            `;
+        }
+    }
+    
+    // Section 2: Recent Artists
+    if (hasHistory) {
+        const seenArtists = new Set();
+        const recentArtists = [];
+        for (const track of state.history) {
+            const artist = (track.artists || '').split(',')[0].trim();
+            if (artist && !seenArtists.has(artist) && recentArtists.length < 6) {
+                seenArtists.add(artist);
+                recentArtists.push({ name: artist, art: track.album_art });
+            }
+        }
+        
+        if (recentArtists.length > 0) {
+            html += `
+                <section class="dashboard-section">
+                    <h3 class="dashboard-title">🎤 Your Artists</h3>
+                    <div class="dashboard-grid dashboard-grid-artists">
+                        ${recentArtists.map(artist => `
+                            <div class="dashboard-card dashboard-card-artist" onclick="searchArtist('${escapeHtml(artist.name)}')">
+                                <img src="${artist.art || '/static/icon.svg'}" alt="${escapeHtml(artist.name)}" loading="lazy">
+                                <div class="dashboard-card-info">
+                                    <p class="dashboard-card-title">${escapeHtml(artist.name)}</p>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </section>
+            `;
+        }
+    }
+    
+    // Section 3: Your Library (Starred Tracks)
+    if (hasLibrary) {
+        html += `
+            <section class="dashboard-section">
+                <h3 class="dashboard-title">⭐ Your Library <span class="dashboard-count">(${state.library.length})</span></h3>
+                <div class="dashboard-grid">
+                    ${state.library.slice(0, 8).map(track => `
+                        <div class="dashboard-card" data-track-id="${track.id}" onclick="playHistoryTrack('${track.id}')">
+                            <img src="${track.album_art || '/static/icon.svg'}" alt="${escapeHtml(track.name)}" loading="lazy">
+                            <div class="dashboard-card-info">
+                                <p class="dashboard-card-title">${escapeHtml(track.name)}</p>
+                                <p class="dashboard-card-subtitle">${escapeHtml(track.artists)}</p>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+                ${state.library.length > 8 ? '<button class="dashboard-see-all" onclick="showLibraryView()">See All →</button>' : ''}
+            </section>
+        `;
+    }
+    
+    // Section 4: Your Playlists
+    if (hasPlaylists) {
+        html += `
+            <section class="dashboard-section">
+                <h3 class="dashboard-title">📋 Your Playlists</h3>
+                <div class="dashboard-grid">
+                    ${state.playlists.slice(0, 4).map(playlist => `
+                        <div class="dashboard-card" onclick="openPlaylistById('${playlist.id}')">
+                            <img src="${playlist.tracks[0]?.album_art || '/static/icon.svg'}" alt="${escapeHtml(playlist.name)}" loading="lazy">
+                            <div class="dashboard-card-info">
+                                <p class="dashboard-card-title">${escapeHtml(playlist.name)}</p>
+                                <p class="dashboard-card-subtitle">${playlist.tracks.length} tracks</p>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            </section>
+        `;
+    }
+    
+    html += '</div>';
+    resultsContainer.innerHTML = html;
 }
+
+// Dashboard helper functions
+function playHistoryTrack(trackId) {
+    const track = state.history.find(t => t.id === trackId) || state.library.find(t => t.id === trackId);
+    if (track) {
+        state.queue = [track];
+        state.currentIndex = 0;
+        loadTrack(track);
+    }
+}
+
+function searchArtist(artistName) {
+    searchInput.value = artistName;
+    state.searchType = 'artist';
+    performSearch(artistName);
+}
+
+function openPlaylistById(playlistId) {
+    const playlist = state.playlists.find(p => p.id === playlistId);
+    if (playlist) {
+        showPlaylistDetail(playlist);
+    }
+}
+
+function showLibraryView() {
+    // Create a virtual "playlist" from library and show it
+    const libraryPlaylist = {
+        id: '__library__',
+        name: '⭐ Your Library',
+        tracks: state.library,
+        is_user_playlist: true
+    };
+    showPlaylistDetail(libraryPlaylist);
+}
+
+// Expose for onclick
+window.playHistoryTrack = playHistoryTrack;
+window.searchArtist = searchArtist;
+window.openPlaylistById = openPlaylistById;
+window.showLibraryView = showLibraryView;
 
 function formatTime(seconds) {
     if (!seconds || isNaN(seconds)) return '0:00';
@@ -3749,6 +4075,8 @@ async function uploadToDrive(syncType = 'all') {
         // 2. Prepare NEW data by merging state into remote data
         const syncData = {
             playlists: currentRemoteData.playlists || [],
+            library: currentRemoteData.library || [],
+            history: currentRemoteData.history || [],
             queue: currentRemoteData.queue || [],
             currentIndex: currentRemoteData.currentIndex || 0,
             volume: currentRemoteData.volume || 1,
@@ -3757,6 +4085,8 @@ async function uploadToDrive(syncType = 'all') {
 
         if (syncType === 'all' || syncType === 'playlists') {
             syncData.playlists = state.playlists;
+            syncData.library = state.library;
+            syncData.history = state.history;
         }
         
         if (syncType === 'all' || syncType === 'queue') {
@@ -3841,6 +4171,8 @@ async function downloadFromDrive(syncType = 'all') {
             
             // Normalize data (handle legacy)
             const remotePlaylists = Array.isArray(syncData) ? syncData : (syncData.playlists || []);
+            const remoteLibrary = Array.isArray(syncData) ? [] : (syncData.library || []);
+            const remoteHistory = Array.isArray(syncData) ? [] : (syncData.history || []);
             const remoteQueue = Array.isArray(syncData) ? [] : (syncData.queue || []);
             const remoteIndex = Array.isArray(syncData) ? 0 : (syncData.currentIndex || 0);
 
@@ -3850,6 +4182,19 @@ async function downloadFromDrive(syncType = 'all') {
             if (syncType === 'all' || syncType === 'playlists') {
                 state.playlists = remotePlaylists;
                 savePlaylists();
+                
+                // Restore library
+                if (remoteLibrary.length > 0) {
+                    state.library = remoteLibrary;
+                    saveLibrary();
+                }
+                
+                // Restore history
+                if (remoteHistory.length > 0) {
+                    state.history = remoteHistory;
+                    saveHistory();
+                }
+                
                 restoredCount = remotePlaylists.length;
                 // If favorites view is active, refresh it
                 if (state.searchType === 'favorites') renderPlaylistsView();

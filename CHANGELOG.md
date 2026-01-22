@@ -10,6 +10,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.1.2] - 2026-01-22
+
+### Added
+- **Jump Back In Dashboard**: Home screen now shows personalized sections for recent albums, artists, library, and playlists
+- **My Library (⭐)**: Save tracks with star icon - separate from playlists, syncs with Google Drive
+- **Listening History**: Tracks your last 50 played songs, persists across sessions
+- **Library View**: Click "See All" on the dashboard to browse your full starred collection
+
+### Changed
+- **Google Drive Sync**: Now syncs Library and History alongside playlists
+- **Search Cards**: Added star (☆/★) button to quickly save tracks
+
+---
+
 ## [1.1.1] - 2026-01-21
 
 ### Fixed

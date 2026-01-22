@@ -5742,3 +5742,153 @@ body {
     margin-left: 6px;
 }
 
+/* ==================== Dashboard (Jump Back In) ==================== */
+.dashboard {
+    padding: var(--spacing-md);
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.dashboard-section {
+    margin-bottom: var(--spacing-xl);
+}
+
+.dashboard-title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: var(--spacing-md);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.dashboard-count {
+    font-size: 0.875rem;
+    font-weight: 400;
+    color: var(--text-tertiary);
+}
+
+.dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: var(--spacing-md);
+}
+
+.dashboard-grid-artists {
+    grid-template-columns: repeat(6, 1fr);
+}
+
+.dashboard-card {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.dashboard-card:hover {
+    background: var(--bg-tertiary);
+    transform: translateY(-4px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.dashboard-card img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    display: block;
+}
+
+.dashboard-card-artist img {
+    border-radius: 50%;
+    padding: var(--spacing-sm);
+    background: var(--bg-tertiary);
+}
+
+.dashboard-card-info {
+    padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.dashboard-card-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+}
+
+.dashboard-card-subtitle {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.dashboard-see-all {
+    display: inline-block;
+    margin-top: var(--spacing-md);
+    padding: var(--spacing-sm) var(--spacing-lg);
+    background: var(--bg-tertiary);
+    border: none;
+    border-radius: var(--radius-full);
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.dashboard-see-all:hover {
+    background: var(--accent);
+}
+
+/* Responsive Dashboard */
+@media (max-width: 900px) {
+    .dashboard-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+    .dashboard-grid-artists {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+@media (max-width: 600px) {
+    .dashboard-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .dashboard-grid-artists {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* ==================== Library Star Button ==================== */
+.star-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.25rem;
+    padding: var(--spacing-xs);
+    transition: transform 0.2s ease, color 0.2s ease;
+    color: var(--text-secondary);
+    opacity: 0.7;
+}
+
+.star-btn:hover {
+    transform: scale(1.2);
+    color: #ffd700;
+    opacity: 1;
+}
+
+.star-btn.starred {
+    color: #ffd700;
+    opacity: 1;
+    text-shadow: 0 0 8px rgba(255, 215, 0, 0.5);
+}
+
+.star-btn.starred:hover {
+    transform: scale(1.1);
+}
