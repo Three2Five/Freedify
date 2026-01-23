@@ -1445,10 +1445,23 @@ $('#album-queue-btn')?.addEventListener('click', () => {
 
 $('#album-download-btn')?.addEventListener('click', () => {
     if (currentAlbumData) {
+        // Get only selected tracks based on checked checkboxes
+        const checkedIndices = new Set();
+        document.querySelectorAll('#album-modal-tracks .track-select-cb:checked').forEach(cb => {
+            checkedIndices.add(parseInt(cb.dataset.index));
+        });
+        
+        const selectedTracks = currentAlbumData.tracks.filter((_, i) => checkedIndices.has(i));
+        
+        if (selectedTracks.length === 0) {
+            showToast('Please select at least one track to download');
+            return;
+        }
+        
         isBatchDownload = true;
         trackToDownload = null;
-        state.detailTracks = currentAlbumData.tracks;
-        downloadTrackName.textContent = `${currentAlbumData.name} (${currentAlbumData.tracks?.length || 0} tracks)`;
+        state.detailTracks = selectedTracks;
+        downloadTrackName.textContent = `${currentAlbumData.name} (${selectedTracks.length} of ${currentAlbumData.tracks.length} tracks)`;
         downloadModal.classList.remove('hidden');
         albumModal.classList.add('hidden');
     }
@@ -1494,13 +1507,14 @@ function showAlbumModal(album) {
     const sampleRate = album.audio_quality?.maximumSamplingRate || 44.1;
     $('#album-modal-quality').textContent = `🎵 ${format} • ${bitDepth}bit / ${sampleRate}kHz`;
     
-    // Render track list
+    // Render track list with selection checkboxes for batch download
     const tracksContainer = $('#album-modal-tracks');
     tracksContainer.innerHTML = tracks.map((track, i) => {
         const isStarred = isInLibrary(track.id);
         return `
         <div class="album-modal-track" data-index="${i}">
             <div class="track-row-top">
+                <input type="checkbox" class="track-select-cb" data-index="${i}" checked title="Select for download">
                 <span class="album-track-num">${i + 1}.</span>
                 <button class="album-track-play" title="Play" data-index="${i}">▶</button>
                 <div class="album-track-info">
@@ -1581,6 +1595,41 @@ function showAlbumModal(album) {
             }
         });
     });
+    
+    // Track selection handlers
+    const selectAllCb = $('#select-all-tracks');
+    const selectionCount = $('#track-selection-count');
+    
+    function updateSelectionCount() {
+        const checked = tracksContainer.querySelectorAll('.track-select-cb:checked').length;
+        const total = tracks.length;
+        selectionCount.textContent = `${checked} of ${total} selected`;
+        
+        // Update Select All checkbox state
+        if (selectAllCb) {
+            selectAllCb.checked = checked === total;
+            selectAllCb.indeterminate = checked > 0 && checked < total;
+        }
+    }
+    
+    // Select All toggle
+    if (selectAllCb) {
+        selectAllCb.addEventListener('change', () => {
+            const isChecked = selectAllCb.checked;
+            tracksContainer.querySelectorAll('.track-select-cb').forEach(cb => {
+                cb.checked = isChecked;
+            });
+            updateSelectionCount();
+        });
+    }
+    
+    // Individual checkbox changes
+    tracksContainer.querySelectorAll('.track-select-cb').forEach(cb => {
+        cb.addEventListener('change', updateSelectionCount);
+    });
+    
+    // Initial count
+    updateSelectionCount();
     
     // Album Info tab
     $('#album-modal-description').textContent = album.description || 
@@ -1909,10 +1958,11 @@ function showDetailView(item, tracks) {
     }
     
     // Render tracks
-    detailTracks.innerHTML = tracks.map((t, i) => {
+    const tracksHtml = tracks.map((t, i) => {
         const isStarred = isInLibrary(t.id);
         return `
         <div class="track-item" data-index="${i}">
+            <input type="checkbox" class="detail-select-cb" data-index="${i}" checked title="Select for download">
             <img class="track-album-art" src="${t.album_art || image}" alt="Art" loading="lazy">
             <div class="track-info">
                 <p class="track-name">${escapeHtml(t.name)}</p>
@@ -1922,6 +1972,48 @@ function showDetailView(item, tracks) {
             <button class="star-btn ${isStarred ? 'starred' : ''}" data-track-id="${t.id}" title="${isStarred ? 'Remove from Library' : 'Add to Library'}">${isStarred ? '★' : '☆'}</button>
         </div>
     `}).join('');
+    
+    // Add Select All controls before tracks
+    detailTracks.innerHTML = `
+        <div class="track-selection-controls" style="margin-bottom: 12px;">
+            <label class="select-all-label">
+                <input type="checkbox" id="detail-select-all" checked>
+                <span>Select All</span>
+            </label>
+            <span id="detail-selection-count" class="selection-count">${tracks.length} of ${tracks.length} selected</span>
+        </div>
+        ${tracksHtml}
+    `;
+    
+    // Selection handlers
+    const selectAllCb = detailTracks.querySelector('#detail-select-all');
+    const selectionCount = detailTracks.querySelector('#detail-selection-count');
+    
+    function updateDetailSelection() {
+        const checked = detailTracks.querySelectorAll('.detail-select-cb:checked').length;
+        const total = tracks.length;
+        selectionCount.textContent = `${checked} of ${total} selected`;
+        if (selectAllCb) {
+            selectAllCb.checked = checked === total;
+            selectAllCb.indeterminate = checked > 0 && checked < total;
+        }
+    }
+    
+    if (selectAllCb) {
+        selectAllCb.addEventListener('change', () => {
+            const isChecked = selectAllCb.checked;
+            detailTracks.querySelectorAll('.detail-select-cb').forEach(cb => cb.checked = isChecked);
+            updateDetailSelection();
+        });
+    }
+    
+    detailTracks.querySelectorAll('.detail-select-cb').forEach(cb => {
+        cb.addEventListener('change', (e) => {
+            e.stopPropagation(); // Prevent track click
+            updateDetailSelection();
+        });
+        cb.addEventListener('click', e => e.stopPropagation());
+    });
     
     // Add click handlers
     $$('#detail-tracks .track-item').forEach((el, i) => {
@@ -1947,6 +2039,43 @@ function hideDetailView() {
 }
 
 backBtn.addEventListener('click', hideDetailView);
+
+// Download All / Selected handler
+$('#download-all-btn')?.addEventListener('click', () => {
+    if (state.detailTracks.length === 0) return;
+    
+    // Get selected tracks
+    const checkedIndices = new Set();
+    document.querySelectorAll('#detail-tracks .detail-select-cb:checked').forEach(cb => {
+        checkedIndices.add(parseInt(cb.dataset.index));
+    });
+    
+    // If nothing selected, or detail view isn't showing checkboxes (fallback), use all tracks
+    // Note: Detail view tracks always have checkboxes now, but keeping fallback logic is safe
+    let tracksToDownload = [];
+    if (checkedIndices.size > 0) {
+        tracksToDownload = state.detailTracks.filter((_, i) => checkedIndices.has(i));
+    } else if (document.querySelectorAll('#detail-tracks .detail-select-cb').length === 0) {
+        tracksToDownload = state.detailTracks;
+    }
+    
+    if (tracksToDownload.length === 0) {
+        showToast('Please select at least one track to download');
+        return;
+    }
+    
+    isBatchDownload = true;
+    trackToDownload = null;
+    
+    // Update state to use only selected tracks for the download operation
+    // Note: This filters the detailTracks state, so subsequent actions like "Shuffle" will also use this selection
+    // until the view is re-opened. This is intended behavior for working with a subset of tracks.
+    state.detailTracks = tracksToDownload;
+    
+    downloadTrackName.textContent = `Selection (${tracksToDownload.length} tracks)`;
+    downloadModal.classList.remove('hidden');
+    // Don't close detail view
+});
 
 queueAllBtn.addEventListener('click', () => {
     if (state.detailTracks.length === 0) return;
@@ -2629,8 +2758,40 @@ queueClear.addEventListener('click', () => {
     updateQueueUI();
 });
 
+// Queue Download Button
+$('#queue-download-btn')?.addEventListener('click', () => {
+    if (state.queue.length === 0) return;
+    
+    // Get checked queue items
+    const checkedIndices = new Set();
+    document.querySelectorAll('#queue-container .queue-select-cb:checked').forEach(cb => {
+        checkedIndices.add(parseInt(cb.dataset.index));
+    });
+    
+    // Filter queue to get selected tracks
+    const selectedTracks = state.queue.filter((_, i) => checkedIndices.has(i));
+    
+    if (selectedTracks.length === 0) {
+        showToast('Please select at least one track to download');
+        return;
+    }
+    
+    isBatchDownload = true;
+    trackToDownload = null;
+    state.detailTracks = selectedTracks;
+    downloadTrackName.textContent = `Queue Selection (${selectedTracks.length} tracks)`;
+    downloadModal.classList.remove('hidden');
+    // Don't close queue section so user maintains context
+});
+
 // Delegated click handler for queue items (handles play, remove, and add-to-playlist)
 queueContainer.addEventListener('click', (e) => {
+    // Check if clicked on checkbox - prevent triggering play
+    if (e.target.classList.contains('queue-select-cb')) {
+        e.stopPropagation();
+        return;
+    }
+    
     // Check if clicked on remove button
     const removeBtn = e.target.closest('.queue-remove-btn');
     if (removeBtn) {
@@ -2709,6 +2870,7 @@ function updateQueueUI() {
     
     queueContainer.innerHTML = state.queue.filter(t => t).map((track, i) => `
         <div class="queue-item" data-index="${i}">
+            <input type="checkbox" class="queue-select-cb" data-index="${i}" title="Select for download">
             <img class="track-album-art" src="${track.album_art || '/static/icon.svg'}" alt="Art" style="width:40px;height:40px;">
             <div class="track-info">
                 <p class="track-name" style="font-size:0.875rem;">${escapeHtml(track.name || 'Unknown')}</p>

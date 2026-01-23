@@ -10,6 +10,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.1.4] - 2026-01-23
+
+### Added
+- **Selective Track Download**: Checkboxes on each track in album/playlist/queue modals to select specific songs to download
+- **Select All Toggle**: Quick select/deselect all tracks with selection count display
+- **Queue Download**: Added "Download Selected" button to queue controls
+
+---
+
 ## [1.1.3] - 2026-01-23
 
 ### Fixed

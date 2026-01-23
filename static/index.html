@@ -207,6 +207,7 @@
             <div class="queue-header">
                 <h3>Queue <span id="queue-count">(0)</span></h3>
                 <div class="queue-controls">
+                    <button id="queue-download-btn" class="queue-download-btn" title="Download Selected">⬇</button>
                     <button id="queue-clear" class="queue-clear">Clear</button>
                     <button id="queue-close" class="queue-close-btn" title="Close Queue">×</button>
                 </div>
@@ -277,6 +278,13 @@
                     </div>
                     
                     <!-- Track List -->
+                    <div class="track-selection-controls">
+                        <label class="select-all-label">
+                            <input type="checkbox" id="select-all-tracks" checked>
+                            <span>Select All</span>
+                        </label>
+                        <span id="track-selection-count" class="selection-count">0 selected</span>
+                    </div>
                     <div id="album-modal-tracks" class="album-modal-tracks">
                         <!-- Tracks will be inserted here -->
                     </div>
