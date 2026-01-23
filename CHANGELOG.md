@@ -10,6 +10,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.1.3] - 2026-01-23
+
+### Fixed
+- **Mobile Gapless Playback**: Fixed "false start" bug where tracks would play briefly, pause for 20 seconds, then restart from beginning when screen is off
+- **Track Transition Race Condition**: Added `transitionInProgress` lock to prevent double-trigger between gapless switch and ended event handlers
+
+### Changed
+- **Mobile Album Modal**: Two-row track layout on mobile - track name on top row, action buttons (star, heart, duration, queue, download) on second row for better readability
+- **Star Icon Visibility**: Star button now uses white outline and gold fill when starred, with glow effect
+- **Preload Timing**: Replaced setTimeout with requestAnimationFrame for mobile-friendly track preloading
+
+---
+
 ## [1.1.2] - 2026-01-22
 
 ### Added

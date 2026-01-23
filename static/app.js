@@ -1500,15 +1500,17 @@ function showAlbumModal(album) {
         const isStarred = isInLibrary(track.id);
         return `
         <div class="album-modal-track" data-index="${i}">
-            <span class="album-track-num">${i + 1}.</span>
-            <button class="album-track-play" title="Play" data-index="${i}">▶</button>
-            <div class="album-track-info">
-                <p class="album-track-name">${escapeHtml(track.name)}</p>
+            <div class="track-row-top">
+                <span class="album-track-num">${i + 1}.</span>
+                <button class="album-track-play" title="Play" data-index="${i}">▶</button>
+                <div class="album-track-info">
+                    <p class="album-track-name">${escapeHtml(track.name)}</p>
+                </div>
             </div>
-            <button class="star-btn ${isStarred ? 'starred' : ''}" data-track-id="${track.id}" data-index="${i}" title="${isStarred ? 'Remove from Library' : 'Add to Library'}">${isStarred ? '★' : '☆'}</button>
-            <button class="album-track-playlist" title="Add to Playlist" data-index="${i}">♡</button>
-            <span class="album-track-duration">${track.duration || '--:--'}</span>
-            <div class="album-track-actions">
+            <div class="track-row-actions">
+                <button class="star-btn ${isStarred ? 'starred' : ''}" data-track-id="${track.id}" data-index="${i}" title="${isStarred ? 'Remove from Library' : 'Add to Library'}">${isStarred ? '★' : '☆'}</button>
+                <button class="album-track-playlist" title="Add to Playlist" data-index="${i}">♡</button>
+                <span class="album-track-duration">${track.duration || '--:--'}</span>
                 <button title="Add to Queue" data-action="queue" data-index="${i}">+</button>
                 <button title="Download" data-action="download" data-index="${i}">⬇</button>
             </div>
@@ -2407,6 +2409,12 @@ function togglePlay() {
 }
 
 function playNext() {
+    // Guard against race conditions - if gapless transition is already handling this, skip
+    if (transitionInProgress) {
+        console.log('playNext: Transition already in progress, skipping to prevent double-trigger');
+        return;
+    }
+    
     const currentTrack = state.queue[state.currentIndex];
     const player = getActivePlayer();
     // Podcast: seek +15s instead of next track
@@ -2487,11 +2495,22 @@ audioPlayer2.addEventListener('pause', handlePause);
 audioPlayer.addEventListener('progress', handleProgress);
 audioPlayer2.addEventListener('progress', handleProgress);
 
-// Ended fallback for audioPlayer2 only (audioPlayer uses playNextWithRepeat instead)
-// Note: audioPlayer's ended handler is added later as playNextWithRepeat
+// Ended fallback handlers - trigger playNext if gapless transition didn't fire
+// Added guards for transition lock to prevent race conditions
+audioPlayer.addEventListener('ended', () => {
+    if (crossfadeTimeout || transitionInProgress) {
+        console.log('audioPlayer ended: Skipping playNext (transition guard active)');
+        return;
+    }
+    if (getActivePlayer() === audioPlayer) playNext();
+});
+
 audioPlayer2.addEventListener('ended', () => {
-    // Skip if gapless already handled this transition
-    if (crossfadeTimeout) return;
+    // Skip if gapless already handled this transition or transition is in progress
+    if (crossfadeTimeout || transitionInProgress) {
+        console.log('audioPlayer2 ended: Skipping playNext (transition guard active)');
+        return;
+    }
     if (getActivePlayer() === audioPlayer2) playNext();
 });
 
@@ -2535,12 +2554,16 @@ function handleTimeUpdate() {
         const crossfadeTime = crossfadeEnabled ? CROSSFADE_DURATION / 1000 : 0.2;
         
         // Trigger if preloaded player exists (don't strictly require preloadedReady - streaming can start anyway)
-        if (timeRemaining <= crossfadeTime && timeRemaining > 0 && preloadedPlayer && !crossfadeTimeout) {
+        if (timeRemaining <= crossfadeTime && timeRemaining > 0 && preloadedPlayer && !crossfadeTimeout && !transitionInProgress) {
             if (state.currentIndex < state.queue.length - 1) {
+                // Set transition lock to prevent 'ended' event from triggering playNext
+                transitionInProgress = true;
+                
                 // Mark that we're handling crossfade
                 crossfadeTimeout = setTimeout(() => {
                     crossfadeTimeout = null;
-                }, crossfadeTime * 1000 + 500);
+                    transitionInProgress = false; // Clear lock after transition completes
+                }, crossfadeTime * 1000 + 1000); // Extended to 1s buffer for safety
                 
                 // Advance to next track
                 state.currentIndex++;
@@ -2563,8 +2586,11 @@ function handleTimeUpdate() {
                 // Update format badge
                 updateFormatBadge(getActivePlayer().src);
                 
-                // Preload the next one
-                setTimeout(preloadNextTrack, 500);
+                // Add to history
+                addToHistory(state.queue[state.currentIndex]);
+                
+                // Preload the next one (use requestAnimationFrame for mobile-friendly timing)
+                requestAnimationFrame(() => preloadNextTrack());
             }
         }
     }
@@ -2703,6 +2729,7 @@ function updateQueueUI() {
 
 // ========== PRELOADING ==========
 let preloadedTrackId = null;
+let transitionInProgress = false; // Prevents race condition between gapless switch and ended event
 
 function preloadNextTrack() {
     if (state.currentIndex === -1 || state.currentIndex >= state.queue.length - 1) return;
