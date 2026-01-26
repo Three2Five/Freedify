@@ -6115,3 +6115,91 @@ body {
 .track-item:has(.detail-select-cb:not(:checked)):hover {
     opacity: 0.75;
 }
+
+/* ==================== Background Download Indicator ==================== */
+.download-indicator {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-dim);
+    padding: 12px 16px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    z-index: 900; /* Below modals (999) but above content */
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    min-width: 280px;
+    max-width: 90vw;
+    animation: slideInRight 0.3s ease;
+    backdrop-filter: blur(10px);
+}
+
+.download-indicator.hidden {
+    display: none;
+}
+
+.download-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--text-tertiary);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    flex-shrink: 0;
+}
+
+#download-status-text {
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.download-progress-track {
+    width: 80px;
+    height: 4px;
+    background: var(--bg-secondary);
+    border-radius: 2px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.download-progress-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.3s ease;
+}
+
+.download-minimize-btn {
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    font-size: 1.2rem;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+.download-minimize-btn:hover {
+    color: var(--text-primary);
+}
+
+@keyframes slideInRight {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+@media (max-width: 768px) {
+    .download-indicator {
+        top: auto;
+        bottom: calc(var(--player-height) + 20px);
+        right: 10px;
+        left: 10px;
+        width: auto;
+    }
+}

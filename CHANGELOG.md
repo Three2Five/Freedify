@@ -10,6 +10,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.1.5] - 2026-01-26
+
+### Added
+- **Background Downloading**: Downloads now run in the background with a non-intrusive status indicator, allowing you to browse and stream music while downloading.
+- **Download Status Pill**: Floating progress indicator shows download status and can be minimized.
+- **Parallel Processing**: Streaming and downloading can now be performed simultaneously without blocking the UI.
+- **Concurrent Batch Downloads**: Batch downloads now process 3 tracks in parallel for significantly faster speeds, with automatic API fallback.
+
+### Fixed
+- **Metadata Embedding**: Fixed issue where metadata (Cover Art, Artist, Album) was missing for 24-bit FLAC and ALAC downloads.
+- **Format Support**: Extended tagging support to include ALAC (.m4a) and ensured all FLAC bit-depths are handled correctly.
+
+---
+
 ## [1.1.4] - 2026-01-23
 
 ### Added

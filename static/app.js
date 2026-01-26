@@ -993,33 +993,56 @@ function closeDownloadModal() {
 
 downloadCancelBtn.addEventListener('click', closeDownloadModal);
 
+// Background Download UI Helpers
+const downloadIndicator = $('#download-indicator');
+const downloadStatusText = $('#download-status-text');
+const downloadProgressFill = $('#download-progress-fill');
+const downloadMinimizeBtn = $('#download-minimize-btn');
+
+function updateDownloadUI(percent, text) {
+    if (downloadIndicator && downloadIndicator.classList.contains('hidden')) {
+        downloadIndicator.classList.remove('hidden');
+    }
+    if (text && downloadStatusText) downloadStatusText.textContent = text;
+    if (downloadProgressFill) downloadProgressFill.style.width = `${percent}%`;
+}
+
+function hideDownloadUI() {
+    if (downloadIndicator) downloadIndicator.classList.add('hidden');
+    if (downloadProgressFill) downloadProgressFill.style.width = '0%';
+}
+
+if (downloadMinimizeBtn) {
+    downloadMinimizeBtn.addEventListener('click', () => {
+        if (downloadIndicator) downloadIndicator.classList.add('hidden');
+    });
+}
+
 downloadConfirmBtn.addEventListener('click', async () => {
     const format = downloadFormat.value;
     const track = trackToDownload; // Capture before closing modal clears it
     const isBatch = isBatchDownload;
     
-    // Get album/playlist name from state (set when detail view opens)
+    // Get album/playlist name from state
     const name = state.detailName || 'Batch Download';
     const artist = state.detailArtist || '';
     const albumName = artist ? `${artist} - ${name}` : name;
     
-    console.log('Download: Using state - name:', name, 'artist:', artist, 'final:', albumName);
-    
     closeDownloadModal();
+    
+    // Show Background UI
+    updateDownloadUI(2, 'Starting download...');
     
     if (isBatch) {
         // Multi-Part Batch Download for Large Playlists
         const tracks = state.detailTracks;
         const totalTracks = tracks.length;
-        const CHUNK_SIZE = 50; // 50 songs per ZIP to avoid browser timeouts
+        const CHUNK_SIZE = 50; // 50 songs per ZIP
         const totalParts = Math.ceil(totalTracks / CHUNK_SIZE);
         
-        // Get progress elements
+        // Hide overlay elements just in case
         const progressContainer = $('#loading-progress-container');
-        const progressBar = $('#loading-progress-bar');
-        const progressText = $('#loading-progress-text');
-        
-        progressContainer.classList.remove('hidden');
+        if (progressContainer) progressContainer.classList.add('hidden');
         
         let successfulParts = 0;
         let failedParts = [];
@@ -1030,15 +1053,14 @@ downloadConfirmBtn.addEventListener('click', async () => {
                 const end = Math.min(start + CHUNK_SIZE, totalTracks);
                 const chunkTracks = tracks.slice(start, end);
                 
-                // Update loading message for multi-part
-                const partLabel = totalParts > 1 ? ` (Part ${part} of ${totalParts})` : '';
-                showLoading(`Downloading${partLabel}: ${chunkTracks.length} tracks...`);
+                // Update message
+                const partLabel = totalParts > 1 ? ` (Part ${part}/${totalParts})` : '';
+                updateDownloadUI(0, `Downloading${partLabel}: ${chunkTracks.length} tracks...`);
                 
                 // Real-Time Progress Polling
                 const downloadId = 'dl_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
                 let pollInterval;
                 
-                // Start polling immediately
                 pollInterval = setInterval(async () => {
                     try {
                         const progRes = await fetch(`/api/progress/${downloadId}`);
@@ -1046,16 +1068,15 @@ downloadConfirmBtn.addEventListener('click', async () => {
                             const progData = await progRes.json();
                             if (progData.total > 0) {
                                 const chunkProgress = (progData.current / progData.total) * 100;
-                                // Overall progress combines completed parts + current part progress
+                                // Overall progress
                                 const overallProgress = ((successfulParts / totalParts) * 100) + (chunkProgress / totalParts);
-                                progressBar.style.width = `${overallProgress}%`;
-                                progressText.textContent = `${Math.round(overallProgress)}%`;
+                                updateDownloadUI(overallProgress);
                             }
                         }
                     } catch (e) {
                         console.warn('Progress poll failed:', e);
                     }
-                }, 5000); // Poll every 5 seconds
+                }, 2000); 
                 
                 try {
                     const response = await fetch('/api/download-batch', {
@@ -1065,20 +1086,12 @@ downloadConfirmBtn.addEventListener('click', async () => {
                             tracks: chunkTracks.map(t => t.isrc || t.id),
                             names: chunkTracks.map(t => t.name),
                             artists: chunkTracks.map(t => t.artists),
-                            
-                            // CLEANUP: Separate ZIP name from Album Tag
-                            zip_name: albumName, // The name of the ZIP file (Playlist Name or Album Name)
-                            
-                            // SILVER BULLET: even if type='album', if there is no YEAR, it is a "Zombie Album" (Playlist).
-                            // Only tag it if we have a valid year.
+                            zip_name: albumName,
                             album_name: (state.detailType === 'album' && (state.detailReleaseYear || chunkTracks[0]?.release_date)) ? albumName : null,
-                            
                             format: format,
                             part: part,
                             total_parts: totalParts,
                             download_id: downloadId,
-                            
-                            // Metadata for embedding
                             album_art_urls: chunkTracks.map(t => t.album_art || t.image || state.detailCover || null),
                             release_year: state.detailReleaseYear || (chunkTracks[0]?.release_date?.substring(0, 4)) || '',
                         })
@@ -1088,18 +1101,17 @@ downloadConfirmBtn.addEventListener('click', async () => {
                     
                     if (!response.ok) throw new Error(`Part ${part} failed`);
                     
-                    // Download this part's ZIP
+                    // Download ZIP
                     const blob = await response.blob();
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.style.display = 'none';
                     a.href = url;
                     
-                    // Name: "Album Name.zip" for single part, "Album Name (Part 1 of 3).zip" for multi
                     const zipName = totalParts > 1 
                         ? `${albumName} (Part ${part} of ${totalParts}).zip`
                         : `${albumName}.zip`;
-                    a.download = zipName.replace(/[\\/:\"*?<>|]/g, "_");
+                    a.download = zipName.replace(/[\\/:"*?<>|]/g, "_");
                     document.body.appendChild(a);
                     a.click();
                     window.URL.revokeObjectURL(url);
@@ -1107,57 +1119,49 @@ downloadConfirmBtn.addEventListener('click', async () => {
                     
                     successfulParts++;
                     
-                    // Brief pause between parts so browser can handle downloads
                     if (part < totalParts) {
                         await new Promise(resolve => setTimeout(resolve, 1000));
                     }
                     
                 } catch (partError) {
-                    clearInterval(progressInterval);
+                    clearInterval(pollInterval);
                     console.error(`Part ${part} error:`, partError);
                     failedParts.push(part);
+                    showError(`Download Part ${part} failed`);
                 }
             }
             
-            // Update final progress
-            progressBar.style.width = '100%';
-            progressText.textContent = '100%';
-            progressContainer.classList.add('hidden');
-            hideLoading();
+            updateDownloadUI(100, 'Download complete!');
+            setTimeout(hideDownloadUI, 3000);
             
-            // Show result message
             if (failedParts.length === 0) {
-                const msg = totalParts > 1 
-                    ? `Download complete! ${totalParts} parts saved.`
-                    : 'Download complete!';
-                showToast(msg);
-            } else {
-                showError(`Downloaded ${successfulParts}/${totalParts} parts. Failed: ${failedParts.join(', ')}`);
+                showToast(totalParts > 1 ? `Download complete! ${totalParts} parts saved.` : 'Download complete!');
             }
             
         } catch (error) {
             console.error('Batch download error:', error);
-            progressContainer.classList.add('hidden');
-            hideLoading();
-            showError('Failed to create ZIP. Please try again.');
+            hideDownloadUI();
+            showError('Batch download failed');
         }
         return;
     }
 
     if (!track) return;
     
-    // Single Track Logic using captured track variable
-    showLoading(`Downloading "${track.name}" as ${format.toUpperCase()}...`);
+    // Single Track Logic
+    updateDownloadUI(0, `Downloading "${track.name}"...`);
     
     try {
         const query = `${track.name} ${track.artists}`;
         const isrc = track.isrc || track.id; 
-        
-        const filename = `${track.name} - ${track.artists}.${format === 'alac' ? 'm4a' : format}`.replace(/[\\/:"*?<>|]/g, "_");
+        const filename = `${track.artists} - ${track.name}.${format === 'alac' ? 'm4a' : format}`.replace(/[\\/:"*?<>|]/g, "_");
         
         const response = await fetch(`/api/download/${isrc}?q=${encodeURIComponent(query)}&format=${format}&filename=${encodeURIComponent(filename)}`);
         
-        if (!response.ok) throw new Error('Download failed');
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || 'Download failed');
+        }
         
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
@@ -1168,13 +1172,15 @@ downloadConfirmBtn.addEventListener('click', async () => {
         document.body.appendChild(a);
         a.click();
         window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
         
-        hideLoading();
-        showToast('Download started!');
+        updateDownloadUI(100, 'Download complete!');
+        setTimeout(hideDownloadUI, 3000);
+        showToast(`Downloaded "${track.name}"`);
         
     } catch (error) {
         console.error('Download error:', error);
-        hideLoading();
+        hideDownloadUI();
         showError('Failed to download track.');
     }
 });

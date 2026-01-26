@@ -448,24 +448,34 @@ class AudioService:
             logger.warning(f"Failed to update Tidal APIs: {e}")
 
     def embed_metadata(self, audio_data: bytes, format: str, metadata: Dict) -> bytes:
-        """Embed metadata into audio file (MP3/FLAC)."""
+        """Embed metadata into audio file (MP3/FLAC/ALAC/WAV)."""
         if not metadata: return audio_data
         
         logger.info(f"Embedding metadata for {format}:")
         logger.info(f"  Title: {metadata.get('title')}")
         logger.info(f"  Artist: {metadata.get('artists')}")
-        logger.info(f"  Album: {metadata.get('album')}")
-        logger.info(f"  Year: {metadata.get('year')}")
-        logger.info(f"  Track#: {metadata.get('track_number')}/{metadata.get('total_tracks', '?')}")
-        logger.info(f"  Cover: {'Yes' if metadata.get('album_art_data') else 'No'}")
         
         try:
-            suffix = ".flac" if format == "flac" else ".mp3"
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                tmp.write(audio_data)
-                tmp_path = tmp.name
+            # Determine suffix and tagging logic
+            is_flac = format in ["flac", "flac_24"]
+            is_mp3 = format in ["mp3", "mp3_128"]
+            is_alac = format == "alac"
+            is_wav = format in ["wav", "wav_24"]
+            is_aiff = format in ["aiff", "aiff_24"]
             
-            if format == "flac":
+            suffix = ".bin"
+            if is_flac: suffix = ".flac"
+            elif is_mp3: suffix = ".mp3"
+            elif is_alac: suffix = ".m4a"
+            elif is_wav: suffix = ".wav"
+            elif is_aiff: suffix = ".aiff"
+            
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp_path = tmp.name
+                tmp.write(audio_data)
+            
+            # --- FLAC (16/24 bit) ---
+            if is_flac:
                 audio = FLAC(tmp_path)
                 audio.clear_pictures()
                 
@@ -473,32 +483,31 @@ class AudioService:
                 if metadata.get("artists"): audio["ARTIST"] = metadata["artists"]
                 if metadata.get("album"): audio["ALBUM"] = metadata["album"]
                 if metadata.get("year"): audio["DATE"] = str(metadata["year"])[:4]
-                # Track number with total (e.g., "3/12")
                 if metadata.get("track_number"):
-                    track_num = str(metadata["track_number"])
-                    if metadata.get("total_tracks"):
-                        track_num = f"{metadata['track_number']}/{metadata['total_tracks']}"
-                    audio["TRACKNUMBER"] = track_num
+                     track_num = str(metadata["track_number"])
+                     if metadata.get("total_tracks"):
+                         track_num = f"{metadata['track_number']}/{metadata['total_tracks']}"
+                     audio["TRACKNUMBER"] = track_num
                 if metadata.get("total_tracks"):
                     audio["TRACKTOTAL"] = str(metadata["total_tracks"])
-                    audio["TOTALTRACKS"] = str(metadata["total_tracks"])
+                    audio["TOTALTRACKS"] = str(metadata["total_tracks"]) # Compatibility
                 
                 if metadata.get("album_art_data"):
                     picture = Picture()
                     picture.data = metadata["album_art_data"]
-                    picture.type = 3  # 3 = COVER_FRONT picture type
+                    picture.type = 3
                     picture.mime = "image/jpeg"
                     audio.add_picture(picture)
                 audio.save()
 
-            elif format in ["mp3", "mp3_128"]:
+            # --- MP3 (ID3) ---
+            elif is_mp3:
                 try:
                     audio = MP3(tmp_path, ID3=ID3)
                 except:
                     audio = MP3(tmp_path)
                     audio.add_tags()
                 
-                # ID3 Tags
                 if metadata.get("title"): audio.tags.add(TIT2(encoding=3, text=metadata["title"]))
                 if metadata.get("artists"): audio.tags.add(TPE1(encoding=3, text=metadata["artists"]))
                 if metadata.get("album"): audio.tags.add(TALB(encoding=3, text=metadata["album"]))
@@ -506,17 +515,36 @@ class AudioService:
                 if metadata.get("track_number"): audio.tags.add(TRCK(encoding=3, text=str(metadata["track_number"])))
                 
                 if metadata.get("album_art_data"):
-                    audio.tags.add(
-                        APIC(
-                            encoding=3,
-                            mime='image/jpeg',
-                            type=3,
-                            desc='Cover',
-                            data=metadata["album_art_data"]
-                        )
-                    )
+                    audio.tags.add(APIC(
+                        encoding=3,
+                        mime='image/jpeg',
+                        type=3,
+                        desc='Cover',
+                        data=metadata["album_art_data"]
+                    ))
                 audio.save()
+            
+            # --- ALAC (M4A) ---
+            elif is_alac:
+                try:
+                    audio = MP4(tmp_path)
+                    if metadata.get("title"): audio["\xa9nam"] = metadata["title"]
+                    if metadata.get("artists"): audio["\xa9ART"] = metadata["artists"]
+                    if metadata.get("album"): audio["\xa9alb"] = metadata["album"]
+                    if metadata.get("year"): audio["\xa9day"] = str(metadata["year"])[:4]
+                    if metadata.get("track_number"):
+                        # trkn is tuple of (track_num, total)
+                        t_num = int(metadata.get("track_number", 0))
+                        t_tot = int(metadata.get("total_tracks", 0))
+                        audio["trkn"] = [(t_num, t_tot)]
+                    
+                    if metadata.get("album_art_data"):
+                        audio["covr"] = [MP4Cover(metadata["album_art_data"], imageformat=MP4Cover.FORMAT_JPEG)]
+                    audio.save()
+                except Exception as e:
+                    logger.error(f"ALAC tagging error: {e}")
 
+            # Read back tagged data
             with open(tmp_path, 'rb') as f:
                 tagged_data = f.read()
             
@@ -525,7 +553,7 @@ class AudioService:
             
         except Exception as e:
             logger.error(f"Metadata tagging error: {e}")
-            if os.path.exists(tmp_path): os.remove(tmp_path)
+            if 'tmp_path' in locals() and os.path.exists(tmp_path): os.remove(tmp_path)
             return audio_data
 
     async def get_tidal_download_url(self, track_id: int, quality: str = "LOSSLESS") -> Optional[str]:

@@ -927,11 +927,10 @@ async def get_progress(download_id: str):
 
 @app.post("/api/download-batch")
 async def download_batch(request: BatchDownloadRequest):
-    """Download multiple tracks as a ZIP file."""
+    """Download multiple tracks as a ZIP file with parallel processing."""
     try:
         final_name = request.zip_name or request.album_name or "download"
         logger.info(f"Batch download request: {len(request.tracks)} tracks from {final_name}")
-        logger.info(f"Metadata Tag: {request.album_name} | Zip Name: {final_name}")
         
         # In-memory ZIP buffer
         zip_buffer = io.BytesIO()
@@ -944,62 +943,69 @@ async def download_batch(request: BatchDownloadRequest):
                 "status": "processing"
             }
         
-        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
-            used_names = set()
-            
-            # Process sequentially for better reliability
-            for i, isrc in enumerate(request.tracks):
-                # Update progress
-                if request.download_id:
-                    download_progress[request.download_id]["current"] = i
-                
-                # Log progress for debugging
-                logger.info(f"Downloading track {i+1}/{len(request.tracks)}: {request.names[i]}")
-                
+        # Concurrency control (3 concurrent downloads)
+        semaphore = asyncio.Semaphore(3)
+        zip_lock = asyncio.Lock()
+        used_names = set()
+        
+        async def process_track(i: int, isrc: str):
+            async with semaphore:
                 try:
+                    logger.info(f"Starting track {i+1}/{len(request.tracks)}: {request.names[i]}")
+                    
                     query = f"{request.names[i]} {request.artists[i]}"
                     
-                    # Build metadata from request (frontend provides this)
+                    # Build metadata
                     provided_metadata = {
                         "title": request.names[i],
                         "artists": request.artists[i],
-                        "album": request.album_name,  # Only set if we want to overwrite tag
+                        "album": request.album_name,
                         "year": request.release_year or "",
                         "album_art_url": request.album_art_urls[i] if request.album_art_urls and i < len(request.album_art_urls) else None,
                         "total_tracks": len(request.tracks) * request.total_parts if request.album_name else None
                     }
                     
-                    # Debug log what we received
-                    logger.info(f"Provided metadata - year: '{request.release_year}', art_url: {provided_metadata['album_art_url'][:50] if provided_metadata['album_art_url'] else 'None'}...")
-                    
-                    # Pass track number (1-indexed) and metadata
+                    # Download
                     result = await audio_service.get_download_audio(
                         isrc, 
                         query, 
                         request.format,
-                        track_number=i+1,  # 1-indexed track number
+                        track_number=i+1,
                         provided_metadata=provided_metadata
                     )
                     
                     if result:
                         data, ext, _ = result
-                        # Clean filename
+                        
+                        # Calculate filename
                         safe_name = f"{request.artists[i]} - {request.names[i]}".replace("/", "_").replace("\\", "_").replace(":", "_").replace("*", "").replace("?", "").replace('"', "").replace("<", "").replace(">", "").replace("|", "")
                         filename = f"{safe_name}{ext}"
                         
-                        # Handle duplicates
-                        count = 1
-                        base_filename = filename
-                        while filename in used_names:
-                            filename = f"{safe_name} ({count}){ext}"
-                            count += 1
-                        used_names.add(filename)
-                        
-                        zip_file.writestr(filename, data)
-                        logger.info(f"Added to ZIP: {filename}")
+                        # Write to ZIP (atomic operation via lock)
+                        async with zip_lock:
+                            # Handle duplicates
+                            count = 1
+                            base_filename = filename
+                            while filename in used_names:
+                                filename = f"{safe_name} ({count}){ext}"
+                                count += 1
+                            used_names.add(filename)
+                            
+                            zip_file.writestr(filename, data)
+                            logger.info(f"Added to ZIP: {filename}")
+                            
+                            # Update progress
+                            if request.download_id:
+                                download_progress[request.download_id]["current"] += 1
+                                
                 except Exception as e:
                     logger.error(f"Failed to download track {isrc}: {e}")
-                    # Continue with other tracks
+                    # Don't raise, just continue (partial success)
+        
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            # Create tasks
+            tasks = [process_track(i, isrc) for i, isrc in enumerate(request.tracks)]
+            await asyncio.gather(*tasks)
 
         # Cleanup progress
         if request.download_id and request.download_id in download_progress:
@@ -1009,7 +1015,7 @@ async def download_batch(request: BatchDownloadRequest):
         final_name = request.zip_name or request.album_name or "download"
         safe_album = final_name.replace("/", "_").replace("\\", "_").replace(":", "_")
         
-        # Name ZIP with part number if it's a multi-part download
+        # Name ZIP with part number
         if request.total_parts > 1:
             filename = f"{safe_album} (Part {request.part} of {request.total_parts}).zip"
         else:
