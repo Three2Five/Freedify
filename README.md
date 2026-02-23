@@ -1,6 +1,6 @@
 # Freedify - Music Streaming Web App
 
-*Last updated: January 23, 2026*
+*Last updated: February 24, 2026*
 
 Stream music and podcasts from anywhere. **Generate smart playlists with AI**, search songs, albums, artists, podcasts or paste URLs from Spotify, SoundCloud, Bandcamp, Archive.org, Phish.in, and more.
 

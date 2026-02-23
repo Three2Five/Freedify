@@ -497,48 +497,6 @@ async def stream_audio(
 
 
             try:
-                # Use a dedicated client per request, managed by a generator with context manager.
-                # This guarantees cleanup when the generator is closed (e.g. client disconnect).
-                # This avoids "Shared Client" pool exhaustion/deadlocks.
-                
-                async def stream_generator():
-                    try:
-                        # 60s timeout, follow redirects
-                        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
-                            req = client.build_request("GET", target_stream_url, headers=req_headers)
-                            async with client.stream(req.method, req.url, headers=req.headers) as r:
-                                # We've started the stream. Now we need to yield data.
-                                # But wait, we need to return status_code and headers to FastAPI *before* we yield data 
-                                # if we use standard StreamingResponse... 
-                                
-                                # Actually, StreamingResponse takes a generator for content.
-                                # But it needs status and headers passed in the constructor.
-                                # Be we can't get them until we make the request!
-                                
-                                # This is the "Streaming Problem".
-                                # Solution: use a separate setup request (HEAD) or...
-                                # Accept that we make the request *outside* the generator for headers, 
-                                # but risking the cleanup issue?
-                                
-                                # NO. The cleanup issue is paramount.
-                                # If we can't get headers cleanly without risking leaks, we should assume defaults 
-                                # or use a dummy request?
-                                
-                                # ALTERNATIVE: Use the shared client again, BUT with a much more aggressive timeout?
-                                # OR use the pattern where we don't return StreamingResponse until we have headers,
-                                # ensuring we use a try/finally block that closes the client.
-                                
-                                # Let's stick to the pattern I implemented before but simpler:
-                                # 1. Create client
-                                # 2. Make request
-                                # 3. Return StreamingResponse with a generator that CLOSES the client.
-                                # 4. BUT ensure `client` is a LOCALLY created instance, not shared.
-                                pass
-                                
-                    except Exception as e:
-                        logger.error(f"Generator error: {e}")
-
-                # Real Implementation:
                 # Create a local client instance (not shared).
                 client = httpx.AsyncClient(follow_redirects=True, timeout=60.0)
                 req = client.build_request("GET", target_stream_url, headers=req_headers)

@@ -1751,155 +1751,6 @@ function showDetailView(item, tracks) {
     }
 }
 
-// ========== DOWNLOAD LOGIC ==========
-
-window.openDownloadModal = function(trackJson) {
-    const track = JSON.parse(decodeURIComponent(trackJson));
-    trackToDownload = track;
-    
-    downloadTrackName.textContent = `${track.name} - ${track.artists}`;
-    downloadModal.classList.remove('hidden');
-};
-
-function closeDownloadModal() {
-    downloadModal.classList.add('hidden');
-    trackToDownload = null;
-}
-
-downloadCancelBtn.addEventListener('click', closeDownloadModal);
-
-downloadConfirmBtn.addEventListener('click', async () => {
-    if (!trackToDownload) return;
-    
-    const format = downloadFormat.value;
-    const track = trackToDownload;
-    
-    closeDownloadModal();
-    
-    // Show non-blocking notification or toast could be better, but we'll use loading for now
-    // or just let it happen in background. Let's show a loading indicator.
-    showLoading(`Downloading "${track.name}" as ${format.toUpperCase()}...`);
-    
-    try {
-        const query = `${track.name} ${track.artists}`;
-        const isrc = track.isrc || track.id; // Fallback to ID if ISRC missing
-        
-        // Construct filename
-        const filename = `${track.artists} - ${track.name}.${format === 'alac' ? 'm4a' : format}`.replace(/[\\/:"*?<>|]/g, "_");
-        
-        const response = await fetch(`/api/download/${isrc}?q=${encodeURIComponent(query)}&format=${format}&filename=${encodeURIComponent(filename)}`);
-        
-        if (!response.ok) throw new Error('Download failed');
-        
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.style.display = 'none';
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        
-        hideLoading();
-        
-    } catch (error) {
-        console.error('Download error:', error);
-        showError('Failed to download track. Please try again.');
-    }
-});
-
-// Configure Save to Drive button
-$('#download-drive-btn').addEventListener('click', async () => {
-    if (!trackToDownload) return;
-    
-    // Ensure signed in logic 
-    if (!googleAccessToken) {
-        await signInWithGoogle();
-        if (!googleAccessToken) return; // User cancelled or failed
-    }
-
-    const format = downloadFormat.value;
-    const track = trackToDownload;
-    
-    closeDownloadModal();
-    
-    showLoading(`Saving "${track.name}" to Google Drive (as ${format.toUpperCase()})...`);
-    
-    try {
-        // 1. Get Folder ID
-        const folderId = await findOrCreateFreedifyFolder();
-        if (!folderId) throw new Error('Could not find or create "Freedify" folder');
-        
-        // 2. Call Backend to Upload
-        const query = `${track.name} ${track.artists}`;
-        const isrc = track.isrc || track.id;
-        
-        // Construct filename
-        const filename = `${track.artists} - ${track.name}.${format === 'alac' ? 'm4a' : format}`.replace(/[\\/:"*?<>|]/g, "_");
-
-        const response = await fetch('/api/drive/upload', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                isrc: isrc,
-                access_token: googleAccessToken,
-                format: format,
-                folder_id: folderId,
-                filename: filename,
-                q: query
-            })
-        });
-        
-        if (!response.ok) {
-            const err = await response.json();
-            throw new Error(err.detail || 'Upload failed');
-        }
-        
-        const result = await response.json();
-        hideLoading();
-        showToast(`✅ Saved to Drive: ${result.name}`);
-        
-    } catch (error) {
-        console.error('Drive save error:', error);
-        hideLoading();
-        showError(`Failed to save to Drive: ${error.message}`);
-    }
-});
-
-// Close modal on outside click
-downloadModal.addEventListener('click', (e) => {
-    if (e.target === downloadModal) closeDownloadModal();
-});
-
-// ========== KEYBOARD SHORTCUTS ==========
-document.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-    
-    switch (e.code) {
-        case 'Space':
-            e.preventDefault();
-            togglePlay();
-            break;
-        case 'ArrowRight':
-            if (e.shiftKey) getActivePlayer().currentTime += 10;
-            else playNext();
-            break;
-        case 'ArrowLeft':
-            if (e.shiftKey) getActivePlayer().currentTime -= 10;
-            else playPrevious();
-            break;
-        case 'Escape':
-            if (!downloadModal.classList.contains('hidden')) {
-                closeDownloadModal();
-            } else if (!detailView.classList.contains('hidden')) {
-                hideDetailView();
-            }
-            break;
-    }
-});
 
 // ========== SERVICE WORKER ==========
 if ('serviceWorker' in navigator) {
@@ -1909,223 +1760,6 @@ if ('serviceWorker' in navigator) {
 // Initial state
 showEmptyState();
 
-
-// Duplicate render functions removed - using definitions at line 753
-
-// ========== ALBUM / ARTIST / PLAYLIST DETAIL VIEW ==========
-// Note: openAlbum is defined earlier with setlist modal support
-
-async function openArtist(artistId) {
-    showLoading('Loading artist...');
-    try {
-        const response = await fetch(`/api/artist/${artistId}`);
-        const artist = await response.json();
-        if (!response.ok) throw new Error(artist.detail);
-        
-        hideLoading();
-        showDetailView(artist, artist.tracks);
-    } catch (error) {
-        showError('Failed to load artist');
-    }
-}
-
-function showDetailView(item, tracks) {
-    state.detailTracks = tracks || [];
-    
-    // Render info section
-    const isArtist = item.type === 'artist';
-    const image = item.album_art || item.image || '/static/icon.svg';
-    const subtitle = item.artists || item.owner || (item.genres?.slice(0, 2).join(', ')) || '';
-    const stats = item.total_tracks ? `${item.total_tracks} tracks` : 
-                  item.followers ? `${(item.followers / 1000).toFixed(0)}K followers` : '';
-    
-    // Check if this is already a saved playlist (to avoid re-saving)
-    const isSavedPlaylist = item.id && item.id.startsWith('playlist_');
-    
-    detailInfo.innerHTML = `
-        <img class="detail-art${isArtist ? ' artist-art' : ''}" src="${image}" alt="Cover">
-        <div class="detail-meta">
-            <p class="detail-name">${escapeHtml(item.name)}</p>
-            <p class="detail-artist">${escapeHtml(subtitle)}</p>
-            <p class="detail-stats">${stats}</p>
-            ${!isSavedPlaylist && tracks.length > 0 ? `<button id="save-playlist-btn" class="save-playlist-btn">Save to Playlist</button>` : ''}
-        </div>
-    `;
-    
-    // Add save playlist handler
-    const saveBtn = $('#save-playlist-btn');
-    if (saveBtn) {
-        saveBtn.addEventListener('click', () => {
-            const name = prompt('Enter playlist name:', item.name || 'My Playlist');
-            if (name) {
-                createPlaylist(name, state.detailTracks);
-            }
-        });
-    }
-    
-    // Render tracks
-    const tracksHtml = tracks.map((t, i) => {
-        const isStarred = isInLibrary(t.id);
-        return `
-        <div class="track-item" data-index="${i}">
-            <input type="checkbox" class="detail-select-cb" data-index="${i}" checked title="Select for download">
-            <img class="track-album-art" src="${t.album_art || image}" alt="Art" loading="lazy">
-            <div class="track-info">
-                <p class="track-name">${escapeHtml(t.name)}</p>
-                <p class="track-artist">${escapeHtml(t.artists)}</p>
-            </div>
-            <span class="track-duration">${t.duration}</span>
-            <button class="star-btn ${isStarred ? 'starred' : ''}" data-track-id="${t.id}" title="${isStarred ? 'Remove from Library' : 'Add to Library'}">${isStarred ? '★' : '☆'}</button>
-        </div>
-    `}).join('');
-    
-    // Add Select All controls before tracks
-    detailTracks.innerHTML = `
-        <div class="track-selection-controls" style="margin-bottom: 12px;">
-            <label class="select-all-label">
-                <input type="checkbox" id="detail-select-all" checked>
-                <span>Select All</span>
-            </label>
-            <span id="detail-selection-count" class="selection-count">${tracks.length} of ${tracks.length} selected</span>
-        </div>
-        ${tracksHtml}
-    `;
-    
-    // Selection handlers
-    const selectAllCb = detailTracks.querySelector('#detail-select-all');
-    const selectionCount = detailTracks.querySelector('#detail-selection-count');
-    
-    function updateDetailSelection() {
-        const checked = detailTracks.querySelectorAll('.detail-select-cb:checked').length;
-        const total = tracks.length;
-        selectionCount.textContent = `${checked} of ${total} selected`;
-        if (selectAllCb) {
-            selectAllCb.checked = checked === total;
-            selectAllCb.indeterminate = checked > 0 && checked < total;
-        }
-    }
-    
-    if (selectAllCb) {
-        selectAllCb.addEventListener('change', () => {
-            const isChecked = selectAllCb.checked;
-            detailTracks.querySelectorAll('.detail-select-cb').forEach(cb => cb.checked = isChecked);
-            updateDetailSelection();
-        });
-    }
-    
-    detailTracks.querySelectorAll('.detail-select-cb').forEach(cb => {
-        cb.addEventListener('change', (e) => {
-            e.stopPropagation(); // Prevent track click
-            updateDetailSelection();
-        });
-        cb.addEventListener('click', e => e.stopPropagation());
-    });
-    
-    // Add click handlers
-    $$('#detail-tracks .track-item').forEach((el, i) => {
-        el.addEventListener('click', () => {
-            const track = tracks[i];
-            // Show podcast modal for podcast episodes, otherwise play directly
-            if (track.source === 'podcast' && track.description) {
-                showPodcastModal(track);
-            } else {
-                playTrack(track);
-            }
-        });
-    });
-    
-    // Show detail view
-    detailView.classList.remove('hidden');
-    resultsSection.classList.add('hidden');
-}
-
-function hideDetailView() {
-    detailView.classList.add('hidden');
-    resultsSection.classList.remove('hidden');
-}
-
-backBtn.addEventListener('click', hideDetailView);
-
-// Download All / Selected handler
-$('#download-all-btn')?.addEventListener('click', () => {
-    if (state.detailTracks.length === 0) return;
-    
-    // Get selected tracks
-    const checkedIndices = new Set();
-    document.querySelectorAll('#detail-tracks .detail-select-cb:checked').forEach(cb => {
-        checkedIndices.add(parseInt(cb.dataset.index));
-    });
-    
-    // If nothing selected, or detail view isn't showing checkboxes (fallback), use all tracks
-    // Note: Detail view tracks always have checkboxes now, but keeping fallback logic is safe
-    let tracksToDownload = [];
-    if (checkedIndices.size > 0) {
-        tracksToDownload = state.detailTracks.filter((_, i) => checkedIndices.has(i));
-    } else if (document.querySelectorAll('#detail-tracks .detail-select-cb').length === 0) {
-        tracksToDownload = state.detailTracks;
-    }
-    
-    if (tracksToDownload.length === 0) {
-        showToast('Please select at least one track to download');
-        return;
-    }
-    
-    isBatchDownload = true;
-    trackToDownload = null;
-    
-    // Update state to use only selected tracks for the download operation
-    // Note: This filters the detailTracks state, so subsequent actions like "Shuffle" will also use this selection
-    // until the view is re-opened. This is intended behavior for working with a subset of tracks.
-    state.detailTracks = tracksToDownload;
-    
-    downloadTrackName.textContent = `Selection (${tracksToDownload.length} tracks)`;
-    downloadModal.classList.remove('hidden');
-    // Don't close detail view
-});
-
-queueAllBtn.addEventListener('click', () => {
-    if (state.detailTracks.length === 0) return;
-    
-    // Add all tracks to queue
-    state.detailTracks.forEach(track => {
-        if (!state.queue.find(t => t.id === track.id)) {
-            state.queue.push(track);
-        }
-    });
-    
-    updateQueueUI();
-    
-    // Start playing first if nothing is playing
-    if (state.currentIndex === -1 && state.queue.length > 0) {
-        state.currentIndex = 0;
-        loadTrack(state.queue[0]);
-    }
-    
-    hideDetailView();
-});
-
-// Shuffle & Play button
-shuffleBtn.addEventListener('click', () => {
-    if (state.detailTracks.length === 0) return;
-    
-    // Copy and shuffle tracks using Fisher-Yates
-    const shuffled = [...state.detailTracks];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    
-    // Clear queue and add shuffled tracks
-    state.queue = [];
-    shuffled.forEach(track => state.queue.push(track));
-    
-    // Start playing first shuffled track
-    state.currentIndex = 0;
-    updateQueueUI();
-    loadTrack(state.queue[0]);
-    
-    hideDetailView();
-});
 
 // ========== PLAYBACK ==========
 function playTrack(track) {
@@ -2388,9 +2022,11 @@ async function loadTrack(track) {
     state.scrobbledCurrent = false; // Reset scrobble status
     playerBar.classList.remove('hidden');
     
-    // Reset preload state on direct track load
+    // Reset preload and transition state on direct track load
     preloadedTrackId = null;
     preloadedPlayer = null;
+    preloadedReady = false;
+    transitionInProgress = false;
     if (crossfadeTimeout) {
         clearTimeout(crossfadeTimeout);
         crossfadeTimeout = null;
@@ -2446,7 +2082,7 @@ async function loadTrack(track) {
         
         await new Promise((resolve, reject) => {
             const cleanup = () => {
-                player.oncanplay = null;
+                player.oncanplaythrough = null;
                 player.onerror = null;
                 if (loadTimeoutId) {
                     clearTimeout(loadTimeoutId);
@@ -2454,7 +2090,7 @@ async function loadTrack(track) {
                 }
             };
             
-            player.oncanplay = () => {
+            player.oncanplaythrough = () => {
                 cleanup();
                 resolve();
             };
@@ -2544,110 +2180,236 @@ function togglePlay() {
 }
 
 function playNext() {
+
     // Guard against race conditions - if gapless transition is already handling this, skip
+
     if (transitionInProgress) {
+
         console.log('playNext: Transition already in progress, skipping to prevent double-trigger');
+
         return;
+
     }
+
     
+
     const currentTrack = state.queue[state.currentIndex];
+
     const player = getActivePlayer();
+
     // Podcast: seek +15s instead of next track
+
     if (currentTrack && currentTrack.source === 'podcast') {
+
         player.currentTime = Math.min(player.duration || 0, player.currentTime + 15);
+
         return;
+
     }
+
+    
+
+    // Repeat One: restart current track
+
+    if (state.repeatMode === 'one') {
+
+        player.currentTime = 0;
+
+        player.play();
+
+        return;
+
+    }
+
+    
+
     if (state.currentIndex < state.queue.length - 1) {
+
         state.currentIndex++;
+
+        state.scrobbledCurrent = false;
+
         
+
         // Try to use preloaded player (no loading screen) - ONLY if ready
+
         if (preloadedReady && preloadedPlayer && preloadedTrackId === state.queue[state.currentIndex]?.id) {
+
             console.log('playNext: Using preloaded player for:', state.queue[state.currentIndex].name);
+
             preloadedTrackId = null;
+
             preloadedReady = false;
+
             updatePlayerUI();
+
             updateQueueUI();
+
             updateFullscreenUI(state.queue[state.currentIndex]);
+
             performGaplessSwitch();
+
             updateFormatBadge(getActivePlayer().src);
+
             updateMediaSession(state.queue[state.currentIndex]);
+
             addToHistory(state.queue[state.currentIndex]);
+
             setTimeout(preloadNextTrack, 500);
+
         } else {
+
             loadTrack(state.queue[state.currentIndex]);
+
         }
+
+    } else if (state.repeatMode === 'all' && state.queue.length > 0) {
+
+        // Repeat All: loop back to start
+
+        state.currentIndex = 0;
+
+        state.scrobbledCurrent = false;
+
+        loadTrack(state.queue[0]);
+
     }
+
+    // else: end of queue with no repeat — do nothing (stop naturally)
+
 }
+
+
 
 function playPrevious() {
+
     const currentTrack = state.queue[state.currentIndex];
+
     const player = getActivePlayer();
+
     // Podcast: seek -15s instead of prev track
+
     if (currentTrack && currentTrack.source === 'podcast') {
+
         player.currentTime = Math.max(0, player.currentTime - 15);
+
         return;
+
     }
+
     if (player.currentTime > 3) {
+
         player.currentTime = 0;
+
     } else if (state.currentIndex > 0) {
+
         state.currentIndex--;
+
         loadTrack(state.queue[state.currentIndex]);
+
     }
+
 }
+
+
 
 // Shared event handlers for both audio players
+
 function handlePlay() {
+
     state.isPlaying = true;
+
     updatePlayButton();
+
     const track = state.queue[state.currentIndex];
+
     if (track) submitNowPlaying(track);
+
 }
 
-function handlePause() {
+
+
+function handlePause(e) {
+
     // Only update if the active player paused
-    if (this === getActivePlayer()) {
+
+    if (e.target === getActivePlayer()) {
+
         state.isPlaying = false;
+
         updatePlayButton();
+
     }
+
 }
+
+
 
 function handleProgress() {
+
     const player = getActivePlayer();
+
     if (player.duration > 0 && player.buffered.length > 0) {
+
         // Check if we have buffered enough to start next download
+
         const bufferedEnd = player.buffered.end(player.buffered.length - 1);
+
         if (bufferedEnd >= player.duration - 60) { // 60 seconds before end (for long songs)
+
              preloadNextTrack();
+
         }
+
     }
+
 }
 
+
+
+// Unified ended handler — handles repeat, transition guards, and queue advancement
+
+function handleEnded(e) {
+
+    // Skip if gapless transition already handled this
+
+    if (crossfadeTimeout || transitionInProgress) {
+
+        console.log('handleEnded: Skipping playNext (transition guard active)');
+
+        return;
+
+    }
+
+    // Only respond if the active player fired this event
+
+    if (e.target !== getActivePlayer()) return;
+
+    playNext();
+
+}
+
+
+
 // Bind events to both players
+
 audioPlayer.addEventListener('play', handlePlay);
+
 audioPlayer2.addEventListener('play', handlePlay);
+
 audioPlayer.addEventListener('pause', handlePause);
+
 audioPlayer2.addEventListener('pause', handlePause);
+
 audioPlayer.addEventListener('progress', handleProgress);
+
 audioPlayer2.addEventListener('progress', handleProgress);
 
-// Ended fallback handlers - trigger playNext if gapless transition didn't fire
-// Added guards for transition lock to prevent race conditions
-audioPlayer.addEventListener('ended', () => {
-    if (crossfadeTimeout || transitionInProgress) {
-        console.log('audioPlayer ended: Skipping playNext (transition guard active)');
-        return;
-    }
-    if (getActivePlayer() === audioPlayer) playNext();
-});
+audioPlayer.addEventListener('ended', handleEnded);
 
-audioPlayer2.addEventListener('ended', () => {
-    // Skip if gapless already handled this transition or transition is in progress
-    if (crossfadeTimeout || transitionInProgress) {
-        console.log('audioPlayer2 ended: Skipping playNext (transition guard active)');
-        return;
-    }
-    if (getActivePlayer() === audioPlayer2) playNext();
-});
+audioPlayer2.addEventListener('ended', handleEnded);
+
+
 
 audioPlayer.addEventListener('timeupdate', handleTimeUpdate);
 audioPlayer2.addEventListener('timeupdate', handleTimeUpdate);
@@ -3000,45 +2762,6 @@ function performGaplessSwitch() {
     console.log('Gapless switch to player', activePlayer);
 }
 
-// ========== MEDIA SESSION ==========
-function updateMediaSession(track) {
-    // DJ Mode Info in Player
-    const playerDJInfo = $('#player-dj-info');
-    if (state.djMode && playerDJInfo) {
-        const feat = state.audioFeaturesCache[track.id];
-        if (feat) {
-            const camelotClass = feat.camelot ? `camelot-${feat.camelot}` : '';
-            playerDJInfo.innerHTML = `
-                <div class="dj-badge-container" style="display: flex;">
-                    <span class="dj-badge bpm-badge">${feat.bpm} BPM</span>
-                    <span class="dj-badge camelot-badge ${camelotClass}">${feat.camelot}</span>
-                </div>
-            `;
-            playerDJInfo.classList.remove('hidden');
-        } else {
-            // Try to fetch if missing
-            fetchAudioFeaturesForQueue();
-            playerDJInfo.classList.add('hidden');
-        }
-    } else if (playerDJInfo) {
-        playerDJInfo.classList.add('hidden');
-    }
-
-    if ('mediaSession' in navigator) {
-        navigator.mediaSession.metadata = new MediaMetadata({
-            title: track.name,
-            artist: track.artists,
-            album: track.album || '',
-            artwork: track.album_art ? [{ src: track.album_art, sizes: '512x512' }] : []
-        });
-        
-        navigator.mediaSession.setActionHandler('play', () => getActivePlayer().play());
-        navigator.mediaSession.setActionHandler('pause', () => getActivePlayer().pause());
-        navigator.mediaSession.setActionHandler('previoustrack', playPrevious);
-        navigator.mediaSession.setActionHandler('nexttrack', playNext);
-    }
-}
-
 // ========== UI HELPERS ==========
 function showLoading(text) {
     loadingText.textContent = text || 'Loading...';
@@ -3246,33 +2969,8 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
-// ========== KEYBOARD SHORTCUTS ==========
-document.addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-    
-    switch (e.code) {
-        case 'Space':
-            e.preventDefault();
-            togglePlay();
-            break;
-        case 'ArrowRight':
-            if (e.shiftKey) getActivePlayer().currentTime += 10;
-            else playNext();
-            break;
-        case 'ArrowLeft':
-            if (e.shiftKey) getActivePlayer().currentTime -= 10;
-            else playPrevious();
-            break;
-    }
-});
 
 // ========== SERVICE WORKER ==========
-if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js').catch(console.error);
-}
-
-// Initial state
-showEmptyState();
 
 // ========== FULLSCREEN PLAYER & EXTRAS ==========
 
@@ -3423,8 +3121,6 @@ if (moreControlsBtn && playerMoreMenu) {
         }
     });
 }
-if (fsNextBtn) fsNextBtn.addEventListener('click', () => nextBtn.click());
-
 if (fsProgressBar) {
     fsProgressBar.addEventListener('input', (e) => {
         const player = getActivePlayer();
@@ -3536,47 +3232,6 @@ repeatBtn.addEventListener('click', () => {
         showToast('Repeat: Off');
     }
 });
-
-// Override playNext for repeat handling
-const originalPlayNext = playNext;
-window.playNextWithRepeat = function() {
-    // Skip if gapless already handled this transition
-    if (crossfadeTimeout) return;
-    
-    const player = getActivePlayer();
-    if (state.repeatMode === 'one') {
-        player.currentTime = 0;
-        player.play();
-        return;
-    }
-    
-    if (state.currentIndex < state.queue.length - 1) {
-        state.currentIndex++;
-        
-        // Try to use preloaded player (no loading screen) - ONLY if ready
-        if (preloadedReady && preloadedPlayer && preloadedTrackId === state.queue[state.currentIndex]?.id) {
-            console.log('playNextWithRepeat: Using preloaded player for:', state.queue[state.currentIndex].name);
-            preloadedTrackId = null;
-            preloadedReady = false;
-            updatePlayerUI();
-            updateQueueUI();
-            updateFullscreenUI(state.queue[state.currentIndex]);
-            performGaplessSwitch();
-            updateFormatBadge(getActivePlayer().src);
-            updateMediaSession(state.queue[state.currentIndex]);
-            setTimeout(preloadNextTrack, 500);
-        } else {
-            loadTrack(state.queue[state.currentIndex]);
-        }
-    } else if (state.repeatMode === 'all' && state.queue.length > 0) {
-        state.currentIndex = 0;
-        loadTrack(state.queue[0]);
-    }
-};
-
-// Replace ended handler with repeat-aware version
-audioPlayer.removeEventListener('ended', playNext);
-audioPlayer.addEventListener('ended', window.playNextWithRepeat);
 
 // ========== KEYBOARD SHORTCUTS ==========
 shortcutsClose.addEventListener('click', () => {
@@ -3704,13 +3359,6 @@ function initQueueDragDrop() {
             showToast('Queue reordered');
         });
         
-// Add track to queue
-function addToQueue(track) {
-    if (!track) return;
-    state.queue.push(track);
-    updateQueueUI();
-    showToast(`Added "${track.name}" to queue`);
-}
     });
 }
 

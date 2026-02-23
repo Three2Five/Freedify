@@ -10,6 +10,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.1.6] - 2026-02-24
+
+### Fixed
+- **Gapless Playback**: Fixed double-firing `ended` event handler that caused skipped tracks, broken gapless transitions, and silent queue failures. Root cause: `removeEventListener` on anonymous function silently failed, leaving two competing handlers on the same player.
+- **Song Stuttering**: Changed audio ready detection from `canplay` to `canplaythrough` so the browser buffers sufficient data before starting playback, eliminating the half-second stutter/rebuffer at track start.
+- **Queue Progression**: `playNext` now properly handles Repeat All (loops back to start) and Repeat One (restarts current track) — previously only worked on player 1 due to handler mismatch.
+- **Mid-Playback Stops**: `transitionInProgress` flag now resets on every fresh `loadTrack` call, preventing stuck state that suppressed all track advancement.
+- **Pause State Bug**: Fixed `handlePause` using incorrect `this` context in event listener — now uses `e.target` for reliable active player detection.
+- **FLAC Download Speed**: FLAC-to-FLAC downloads now bypass FFmpeg entirely when source is already FLAC (detects `fLaC` magic bytes), saving 5-15 seconds per track.
+
+### Removed
+- ~430 lines of zombie/duplicate code from frontend including: duplicate `showDetailView`, `openArtist`, `openDownloadModal`, `closeDownloadModal`, `downloadConfirmBtn` handler, `updateMediaSession`, keyboard shortcut handlers (×3), service worker registration, `addToQueue`, and `fsNextBtn` handler.
+- Dead `stream_generator` function (42 lines) from backend `main.py`.
+
+---
+
+
 ## [1.1.5] - 2026-01-26
 
 ### Added

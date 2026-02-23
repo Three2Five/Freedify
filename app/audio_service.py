@@ -1150,19 +1150,27 @@ class AudioService:
         
         # Transcode/Passthrough
         loop = asyncio.get_event_loop()
-        output_data = await loop.run_in_executor(
-            None, self.transcode_to_format, flac_data, format
-        )
+        
+        # FLAC Bypass: If source is already FLAC and requested format is FLAC,
+        # skip the pointless re-encode through FFmpeg
+        is_flac_source = isinstance(flac_data, bytes) and len(flac_data) >= 4 and flac_data[:4] == b'fLaC'
+        is_flac_target = format in ("flac", "flac_24")
+        
+        if is_flac_source and is_flac_target:
+            logger.info(f"FLAC bypass: source is already FLAC, skipping transcode")
+            output_data = flac_data
+        else:
+            output_data = await loop.run_in_executor(
+                None, self.transcode_to_format, flac_data, format
+            )
         
         if output_data:
             # Embed Metadata
+            tag_format = format if not (is_flac_source and is_flac_target) else "flac"
             output_data = await loop.run_in_executor(
-                None, self.embed_metadata, output_data, format, metadata
+                None, self.embed_metadata, output_data, tag_format, metadata
             )
             
-            # Cache it? Maybe not since it has user-specific tags? 
-            # Actually standard tags are fine.
-            # await cache_file(isrc, output_data, cache_ext)
             return (output_data, config["ext"], config["mime"])
         
         return None
