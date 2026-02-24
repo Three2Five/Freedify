@@ -217,6 +217,43 @@ backBtn?.addEventListener('click', () => {
     state.currentPlaylistView = null;
 });
 
+// Add All to Queue button in detail view
+queueAllBtn?.addEventListener('click', () => {
+    const tracks = state.detailTracks || [];
+    if (tracks.length === 0) {
+        showToast('No tracks to add');
+        return;
+    }
+    // Append all tracks to the current queue
+    tracks.forEach(t => {
+        if (!state.queue.some(q => q.id === t.id)) {
+            state.queue.push(t);
+        }
+    });
+    updateQueueUI();
+    showToast(`Added ${tracks.length} tracks to queue`);
+});
+
+// Shuffle & Play button in detail view
+shuffleBtn?.addEventListener('click', () => {
+    const tracks = state.detailTracks || [];
+    if (tracks.length === 0) {
+        showToast('No tracks to shuffle');
+        return;
+    }
+    // Shuffle using Fisher-Yates
+    const shuffled = [...tracks];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    state.queue = shuffled;
+    state.currentIndex = 0;
+    updateQueueUI();
+    loadTrack(shuffled[0]);
+    showToast(`Shuffling ${shuffled.length} tracks`);
+});
+
 // Fullscreen Elements
 const fsToggleBtn = $('#fs-toggle-btn');
 const fullscreenPlayer = $('#fullscreen-player');
