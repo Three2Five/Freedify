@@ -239,12 +239,17 @@ class GeniusService:
             "thumbnail": None,
         }
         
-        # Search for the song
+        # Search for the song on Genius (for metadata, annotations, URL)
         query = f"{artist} {title}"
         song = await self.search_song(query)
         
         if not song:
             logger.info(f"No Genius match for: {query}")
+            # Still try LRCLIB for lyrics even without Genius match
+            lrclib_lyrics = await self.fetch_lyrics_lrclib(artist, title)
+            if lrclib_lyrics:
+                result["found"] = True
+                result["lyrics"] = lrclib_lyrics
             return result
         
         result["found"] = True
@@ -253,7 +258,7 @@ class GeniusService:
         result["title"] = song.get("title", title)
         result["artist"] = song.get("artist", artist)
         
-        # Get detailed info
+        # Get detailed info from Genius API
         song_id = song.get("id")
         if song_id:
             details = await self.get_song_details(song_id)
@@ -264,17 +269,67 @@ class GeniusService:
                 result["producers"] = details.get("producer_artists", [])
                 result["writers"] = details.get("writer_artists", [])
         
-        # Scrape lyrics
-        if song.get("url"):
-            lyrics = await self.scrape_lyrics(song["url"])
-            result["lyrics"] = lyrics
+        # Try LRCLIB first (reliable, no scraping needed)
+        lrclib_lyrics = await self.fetch_lyrics_lrclib(artist, title)
+        if lrclib_lyrics:
+            result["lyrics"] = lrclib_lyrics
+            logger.info(f"Lyrics fetched from LRCLIB for: {artist} - {title}")
+        else:
+            # Fall back to Genius scraping
+            if song.get("url"):
+                lyrics = await self.scrape_lyrics(song["url"])
+                result["lyrics"] = lyrics
+                if lyrics:
+                    logger.info(f"Lyrics fetched from Genius scrape for: {artist} - {title}")
+                else:
+                    logger.warning(f"No lyrics from either LRCLIB or Genius for: {artist} - {title}")
         
-        # Get annotations via API (requires song_id)
+        # Get annotations via Genius API (always works)
         if song_id:
             annotations = await self.get_song_referents(song_id)
             result["annotations"] = annotations
         
         return result
+    
+    async def fetch_lyrics_lrclib(self, artist: str, title: str) -> Optional[str]:
+        """Fetch lyrics from LRCLIB.net (free, no auth required)."""
+        try:
+            params = {
+                "artist_name": artist.split(",")[0].strip(),  # Use primary artist only
+                "track_name": title,
+            }
+            response = await self.client.get(
+                "https://lrclib.net/api/get",
+                params=params,
+                headers={"User-Agent": "Freedify/1.1.8 (https://github.com/freedify)"}
+            )
+            
+            if response.status_code == 404:
+                logger.info(f"LRCLIB: no lyrics for {artist} - {title}")
+                return None
+            
+            if response.status_code != 200:
+                logger.warning(f"LRCLIB returned {response.status_code} for {artist} - {title}")
+                return None
+            
+            data = response.json()
+            
+            # Prefer plain lyrics, fall back to synced
+            plain = data.get("plainLyrics")
+            if plain and plain.strip():
+                return plain.strip()
+            
+            synced = data.get("syncedLyrics")
+            if synced and synced.strip():
+                # Strip timestamp tags [mm:ss.xx] from synced lyrics
+                clean = re.sub(r'\[\d{2}:\d{2}\.\d{2,3}\]\s*', '', synced)
+                return clean.strip()
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"LRCLIB error for {artist} - {title}: {e}")
+            return None
     
     async def close(self):
         """Close the HTTP client."""
