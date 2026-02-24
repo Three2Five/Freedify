@@ -10,6 +10,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.1.7] - 2026-02-24
+
+### Fixed
+- **Random Mid-Playback Pauses**: Fixed `performGaplessSwitch` and `performCrossfade` order-of-operations bug where `activePlayer` was switched AFTER pausing the old player, causing `handlePause` to falsely set `isPlaying = false` during transitions.
+- **Half-Second Play Then Reload**: Fixed `togglePlay` catch handler that called `loadTrack()` on play failure instead of resuming AudioContext — now tries `audioContext.resume()` first (common issue on mobile after screen lock).
+- **Gapless Reliability**: Eliminated parallel track-advance code path in `handleTimeUpdate` that bypassed `playNext()` — all track transitions now flow through a single `playNext()` function.
+- **Queue Progression**: Fixed self-blocking bug where `handleTimeUpdate` set `transitionInProgress` before calling `playNext()`, causing it to immediately return and stop the queue.
+- **EQ Audio Dropout**: EQ initialization `play` handler was only on `audioPlayer`, not `audioPlayer2` — if player 2 started first, AudioContext would remain suspended. Now handles both players symmetrically.
+- **Mute Button**: Fixed mute toggle only setting `audioPlayer.volume` — now sets both `audioPlayer` and `audioPlayer2` volume for correct behavior regardless of which player is active.
+- **Preload Consistency**: Changed preload ready detection from `canplay` to `canplaythrough` to match `loadTrack` behavior, preventing premature transition attempts.
+
+### Changed
+- **Stream-Through Proxy**: Tidal and Deezer audio now streams directly from source to browser via chunk-by-chunk proxy instead of downloading the entire file (38+ MB) to the server first. Cuts initial load time from ~5s to under 1s.
+- **Crossfade Support in Queue**: `playNext` and `playTrack` now correctly choose between crossfade and gapless switch based on user preference (previously always used gapless).
+- **Code Quality**: Collapsed ~100 lines of double-line-spacing artifact from previous fix, removed duplicate `state.crossfadeEnabled` declaration.
+
+---
+
+
 ## [1.1.6] - 2026-02-24
 
 ### Fixed

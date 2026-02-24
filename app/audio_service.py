@@ -776,27 +776,24 @@ class AudioService:
                 download_url = await self.get_tidal_download_url(track_id)
                 
                 if download_url:
-                    logger.info(f"Downloading from Tidal: {download_url[:80]}...")
-                    try:
-                        response = await self.client.get(download_url, timeout=180.0)
-                        if response.status_code == 200:
-                            size_mb = len(response.content) / 1024 / 1024
-                            logger.info(f"Downloaded {size_mb:.2f} MB from Tidal")
-                            
-                            meta = {
-                                "title": tidal_track.get("title"),
-                                "artists": ", ".join([a["name"] for a in tidal_track.get("artists", [])]),  # Join to string
-                                "album": tidal_track.get("album", {}).get("title"),
-                                "year": tidal_track.get("album", {}).get("releaseDate"),
-                                "track_number": tidal_track.get("trackNumber"),
-                            }
-                            cover_uuid = tidal_track.get("album", {}).get("cover")
-                            if cover_uuid:
-                                meta["album_art_data"] = await self._fetch_tidal_cover(cover_uuid)
-                                
-                            return (response.content, meta)
-                    except Exception as e:
-                        logger.error(f"Tidal download error: {e}")
+                    logger.info(f"Streaming via proxy from Tidal: {download_url[:80]}...")
+                    
+                    # Build metadata without downloading the full file
+                    meta = {
+                        "title": tidal_track.get("title"),
+                        "artists": ", ".join([a["name"] for a in tidal_track.get("artists", [])]),
+                        "album": tidal_track.get("album", {}).get("title"),
+                        "year": tidal_track.get("album", {}).get("releaseDate"),
+                        "track_number": tidal_track.get("trackNumber"),
+                    }
+                    
+                    # Fetch album art in parallel (small download, doesn't block stream)
+                    cover_uuid = tidal_track.get("album", {}).get("cover")
+                    if cover_uuid:
+                        meta["album_art_data"] = await self._fetch_tidal_cover(cover_uuid)
+                    
+                    # Return URL string — main.py will stream-proxy it to the browser
+                    return (download_url, meta)
             else:
                 logger.warning(f"Tidal search returned no results for: {isrc}")
         
@@ -836,32 +833,29 @@ class AudioService:
             download_url = await self.get_deezer_download_url(deezer_id)
             
             if download_url:
-                logger.info(f"Downloading from Deezer (deezmate)...")
-                try:
-                    response = await self.client.get(download_url, timeout=180.0)
-                    if response.status_code == 200:
-                        logger.info(f"Downloaded {len(response.content) / 1024 / 1024:.2f} MB from Deezer")
-                        
-                        # Get artists as string
-                        artists_list = [a["name"] for a in deezer_info.get("contributors", [])] if deezer_info.get("contributors") else [deezer_info.get("artist", {}).get("name")]
-                        meta = {
-                            "title": deezer_info.get("title"),
-                            "artists": ", ".join(filter(None, artists_list)),  # Join to string, filter None
-                            "album": deezer_info.get("album", {}).get("title"),
-                            "year": deezer_info.get("release_date"),
-                            "track_number": deezer_info.get("track_position"),
-                        }
-                        cover_url = deezer_info.get("album", {}).get("cover_xl")
-                        if cover_url:
-                            try:
-                                cover_resp = await self.client.get(cover_url)
-                                if cover_resp.status_code == 200:
-                                    meta["album_art_data"] = cover_resp.content
-                            except: pass
-                        
-                        return (response.content, meta)
-                except Exception as e:
-                    logger.error(f"Deezer download error: {e}")
+                logger.info(f"Streaming via proxy from Deezer: {download_url[:60]}...")
+                
+                # Build metadata without downloading the full file
+                artists_list = [a["name"] for a in deezer_info.get("contributors", [])] if deezer_info.get("contributors") else [deezer_info.get("artist", {}).get("name")]
+                meta = {
+                    "title": deezer_info.get("title"),
+                    "artists": ", ".join(filter(None, artists_list)),
+                    "album": deezer_info.get("album", {}).get("title"),
+                    "year": deezer_info.get("release_date"),
+                    "track_number": deezer_info.get("track_position"),
+                }
+                
+                # Fetch album art (small download, doesn't block stream)
+                cover_url = deezer_info.get("album", {}).get("cover_xl")
+                if cover_url:
+                    try:
+                        cover_resp = await self.client.get(cover_url)
+                        if cover_resp.status_code == 200:
+                            meta["album_art_data"] = cover_resp.content
+                    except: pass
+                
+                # Return URL string — main.py will stream-proxy it to the browser
+                return (download_url, meta)
         
         logger.error(f"Could not fetch audio for: {isrc}")
         return None

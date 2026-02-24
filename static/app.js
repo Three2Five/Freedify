@@ -21,7 +21,6 @@ const state = {
     volume: parseFloat(localStorage.getItem('freedify_volume')) || 1,
     muted: false,
     crossfadeDuration: 1, // seconds (when crossfade is enabled)
-    crossfadeEnabled: localStorage.getItem('freedify_crossfade') === 'true', // Crossfade toggle
     playlists: JSON.parse(localStorage.getItem('freedify_playlists') || '[]'), // User playlists
     scrobbledCurrent: false, // Track if current song was scrobbled
     listenBrainzConfig: { valid: false, username: null }, // LB status
@@ -88,7 +87,6 @@ document.addEventListener('touchstart', () => startIOSAudioKeepAlive(), { once: 
 // ========== DOM ELEMENTS ==========
 // App.js v0106L - Robust Proxy Cleanup
 console.log("Freedify v0106L Loaded - Robust Proxy Cleanup");
-
 
 // Helper for multiple selectors (Fix for ReferenceError: $$ is not defined)
 const $ = (selector) => document.querySelector(selector);
@@ -346,7 +344,6 @@ allTypeBtns.forEach(btn => {
 });
 
 // Sort Filter Removed
-
 
 // Crossfade Toggle
 const crossfadeCheckbox = $('#crossfade-checkbox');
@@ -806,7 +803,6 @@ function renderResults(results, type, append = false) {
         });
     }
 
-
 }
 
 // Add track to queue (called from Queue button click)
@@ -1186,7 +1182,6 @@ downloadConfirmBtn.addEventListener('click', async () => {
 });
         
 
-
 function renderTrackCard(track) {
     const year = track.release_date ? track.release_date.slice(0, 4) : '';
     const isStarred = isInLibrary(track.id);
@@ -1204,7 +1199,6 @@ function renderTrackCard(track) {
         </div>
     `;
 }
-
 
 // ... (keep renderAlbumCard and renderArtistCard as is) ...
 
@@ -1751,7 +1745,6 @@ function showDetailView(item, tracks) {
     }
 }
 
-
 // ========== SERVICE WORKER ==========
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js').catch(console.error);
@@ -1759,7 +1752,6 @@ if ('serviceWorker' in navigator) {
 
 // Initial state
 showEmptyState();
-
 
 // ========== PLAYBACK ==========
 function playTrack(track) {
@@ -1791,7 +1783,11 @@ function playTrack(track) {
         updateFullscreenUI(track);
         
         // Switch to preloaded player
-        performGaplessSwitch();
+        if (crossfadeEnabled) {
+            performCrossfade();
+        } else {
+            performGaplessSwitch();
+        }
         
         // Update format badge
         updateFormatBadge(getActivePlayer().src);
@@ -2169,9 +2165,10 @@ function togglePlay() {
     
     if (player.paused) {
         player.play().catch(e => {
-            console.warn('Play failed, trying to reload:', e);
-            if (state.queue[state.currentIndex]) {
-                loadTrack(state.queue[state.currentIndex]);
+            console.warn('Play failed:', e);
+            // Try resuming AudioContext first (common on mobile after screen lock)
+            if (audioContext && audioContext.state === 'suspended') {
+                audioContext.resume().then(() => player.play().catch(() => {}));
             }
         });
     } else {
@@ -2180,236 +2177,124 @@ function togglePlay() {
 }
 
 function playNext() {
-
     // Guard against race conditions - if gapless transition is already handling this, skip
-
     if (transitionInProgress) {
-
         console.log('playNext: Transition already in progress, skipping to prevent double-trigger');
-
         return;
-
     }
-
     
-
     const currentTrack = state.queue[state.currentIndex];
-
     const player = getActivePlayer();
-
     // Podcast: seek +15s instead of next track
-
     if (currentTrack && currentTrack.source === 'podcast') {
-
         player.currentTime = Math.min(player.duration || 0, player.currentTime + 15);
-
         return;
-
     }
-
     
-
     // Repeat One: restart current track
-
     if (state.repeatMode === 'one') {
-
         player.currentTime = 0;
-
         player.play();
-
         return;
-
     }
-
     
-
     if (state.currentIndex < state.queue.length - 1) {
-
         state.currentIndex++;
-
         state.scrobbledCurrent = false;
-
         
-
         // Try to use preloaded player (no loading screen) - ONLY if ready
-
         if (preloadedReady && preloadedPlayer && preloadedTrackId === state.queue[state.currentIndex]?.id) {
-
             console.log('playNext: Using preloaded player for:', state.queue[state.currentIndex].name);
-
             preloadedTrackId = null;
-
             preloadedReady = false;
-
             updatePlayerUI();
-
             updateQueueUI();
-
             updateFullscreenUI(state.queue[state.currentIndex]);
-
-            performGaplessSwitch();
-
+            if (crossfadeEnabled) {
+                performCrossfade();
+            } else {
+                performGaplessSwitch();
+            }
             updateFormatBadge(getActivePlayer().src);
-
             updateMediaSession(state.queue[state.currentIndex]);
-
             addToHistory(state.queue[state.currentIndex]);
-
-            setTimeout(preloadNextTrack, 500);
-
+            requestAnimationFrame(() => preloadNextTrack());
         } else {
-
             loadTrack(state.queue[state.currentIndex]);
-
         }
-
     } else if (state.repeatMode === 'all' && state.queue.length > 0) {
-
         // Repeat All: loop back to start
-
         state.currentIndex = 0;
-
         state.scrobbledCurrent = false;
-
         loadTrack(state.queue[0]);
-
     }
-
     // else: end of queue with no repeat — do nothing (stop naturally)
-
 }
-
-
 
 function playPrevious() {
-
     const currentTrack = state.queue[state.currentIndex];
-
     const player = getActivePlayer();
-
     // Podcast: seek -15s instead of prev track
-
     if (currentTrack && currentTrack.source === 'podcast') {
-
         player.currentTime = Math.max(0, player.currentTime - 15);
-
         return;
-
     }
-
     if (player.currentTime > 3) {
-
         player.currentTime = 0;
-
     } else if (state.currentIndex > 0) {
-
         state.currentIndex--;
-
         loadTrack(state.queue[state.currentIndex]);
-
     }
-
 }
-
-
 
 // Shared event handlers for both audio players
-
 function handlePlay() {
-
     state.isPlaying = true;
-
     updatePlayButton();
-
     const track = state.queue[state.currentIndex];
-
     if (track) submitNowPlaying(track);
-
 }
-
-
 
 function handlePause(e) {
-
     // Only update if the active player paused
-
     if (e.target === getActivePlayer()) {
-
         state.isPlaying = false;
-
         updatePlayButton();
-
     }
-
 }
-
-
 
 function handleProgress() {
-
     const player = getActivePlayer();
-
     if (player.duration > 0 && player.buffered.length > 0) {
-
         // Check if we have buffered enough to start next download
-
         const bufferedEnd = player.buffered.end(player.buffered.length - 1);
-
         if (bufferedEnd >= player.duration - 60) { // 60 seconds before end (for long songs)
-
              preloadNextTrack();
-
         }
-
     }
-
 }
-
-
 
 // Unified ended handler — handles repeat, transition guards, and queue advancement
-
 function handleEnded(e) {
-
     // Skip if gapless transition already handled this
-
     if (crossfadeTimeout || transitionInProgress) {
-
         console.log('handleEnded: Skipping playNext (transition guard active)');
-
         return;
-
     }
-
     // Only respond if the active player fired this event
-
     if (e.target !== getActivePlayer()) return;
-
     playNext();
-
 }
 
-
-
 // Bind events to both players
-
 audioPlayer.addEventListener('play', handlePlay);
-
 audioPlayer2.addEventListener('play', handlePlay);
-
 audioPlayer.addEventListener('pause', handlePause);
-
 audioPlayer2.addEventListener('pause', handlePause);
-
 audioPlayer.addEventListener('progress', handleProgress);
-
 audioPlayer2.addEventListener('progress', handleProgress);
-
 audioPlayer.addEventListener('ended', handleEnded);
-
 audioPlayer2.addEventListener('ended', handleEnded);
-
-
 
 audioPlayer.addEventListener('timeupdate', handleTimeUpdate);
 audioPlayer2.addEventListener('timeupdate', handleTimeUpdate);
@@ -2447,48 +2332,16 @@ function handleTimeUpdate() {
         }
         
         // Crossfade/Gapless trigger: start transition before track ends
-        // Using 200ms buffer - try to use preloaded player even if not flagged "ready"
         const crossfadeTime = crossfadeEnabled ? CROSSFADE_DURATION / 1000 : 0.2;
         
-        // Trigger if preloaded player exists (don't strictly require preloadedReady - streaming can start anyway)
+        // Trigger playNext if preloaded player is ready and we're near the end
         if (timeRemaining <= crossfadeTime && timeRemaining > 0 && preloadedPlayer && !crossfadeTimeout && !transitionInProgress) {
-            if (state.currentIndex < state.queue.length - 1) {
-                // Set transition lock to prevent 'ended' event from triggering playNext
-                transitionInProgress = true;
-                
-                // Mark that we're handling crossfade
-                crossfadeTimeout = setTimeout(() => {
-                    crossfadeTimeout = null;
-                    transitionInProgress = false; // Clear lock after transition completes
-                }, crossfadeTime * 1000 + 1000); // Extended to 1s buffer for safety
-                
-                // Advance to next track
-                state.currentIndex++;
-                state.scrobbledCurrent = false;
-                preloadedTrackId = null;
-                preloadedReady = false; // Reset ready flag
-                
-                // Update UI for new track
-                updatePlayerUI();
-                updateQueueUI();
-                updateFullscreenUI(state.queue[state.currentIndex]); // Sync fullscreen UI
-                
-                // Perform crossfade or gapless switch
-                if (crossfadeEnabled) {
-                    performCrossfade();
-                } else {
-                    performGaplessSwitch();
-                }
-                
-                // Update format badge
-                updateFormatBadge(getActivePlayer().src);
-                
-                // Add to history
-                addToHistory(state.queue[state.currentIndex]);
-                
-                // Preload the next one (use requestAnimationFrame for mobile-friendly timing)
-                requestAnimationFrame(() => preloadNextTrack());
-            }
+            // Set crossfadeTimeout guard to prevent handleEnded from also firing playNext
+            // Do NOT set transitionInProgress here — playNext needs it to be false to proceed
+            crossfadeTimeout = setTimeout(() => {
+                crossfadeTimeout = null;
+            }, crossfadeTime * 1000 + 1000);
+            playNext();
         }
     }
 }
@@ -2678,14 +2531,13 @@ function preloadNextTrack() {
     // Load into the inactive player for gapless transition
     const inactivePlayer = activePlayer === 1 ? audioPlayer2 : audioPlayer;
     
-    // Set up canplay listener for faster ready detection
-    // canplay fires when enough data is available to start (faster than canplaythrough)
+    // Set up canplaythrough listener for reliable ready detection
     const onReady = () => {
         preloadedReady = true;
-        console.log('Preloaded track ready (canplay):', nextTrack.name);
-        inactivePlayer.removeEventListener('canplay', onReady);
+        console.log('Preloaded track ready (canplaythrough):', nextTrack.name);
+        inactivePlayer.removeEventListener('canplaythrough', onReady);
     };
-    inactivePlayer.addEventListener('canplay', onReady);
+    inactivePlayer.addEventListener('canplaythrough', onReady);
     
     inactivePlayer.src = streamUrl;
     inactivePlayer.load();
@@ -2706,14 +2558,19 @@ function getInactivePlayer() {
 
 // Perform crossfade between players
 function performCrossfade() {
+    // Capture references BEFORE switching
+    const oldPlayer = activePlayer === 1 ? audioPlayer : audioPlayer2;
+    const newPlayer = activePlayer === 1 ? audioPlayer2 : audioPlayer;
     const fadeOutGain = activePlayer === 1 ? gainNode1 : gainNode2;
     const fadeInGain = activePlayer === 1 ? gainNode2 : gainNode1;
-    const newPlayer = getInactivePlayer();
     
     if (!audioContext || !fadeOutGain || !fadeInGain) return;
     
     const now = audioContext.currentTime;
     const fadeDuration = CROSSFADE_DURATION / 1000;
+    
+    // Switch activePlayer FIRST so handlePause ignores the old player
+    activePlayer = activePlayer === 1 ? 2 : 1;
     
     // Start playing the new track
     newPlayer.play().catch(e => console.error('Crossfade play error:', e));
@@ -2725,12 +2582,8 @@ function performCrossfade() {
     fadeInGain.gain.setValueAtTime(0, now);
     fadeInGain.gain.linearRampToValueAtTime(1, now + fadeDuration);
     
-    // Switch active player
-    activePlayer = activePlayer === 1 ? 2 : 1;
-    
     // Pause old player after fade completes
     setTimeout(() => {
-        const oldPlayer = getInactivePlayer();
         oldPlayer.pause();
         oldPlayer.currentTime = 0;
     }, CROSSFADE_DURATION + 100);
@@ -2740,24 +2593,23 @@ function performCrossfade() {
 
 // Instant gapless switch (no crossfade)
 function performGaplessSwitch() {
-    const newPlayer = getInactivePlayer();
-    const oldPlayer = getActivePlayer();
+    // Capture references BEFORE switching activePlayer
+    const oldPlayer = activePlayer === 1 ? audioPlayer : audioPlayer2;
+    const newPlayer = activePlayer === 1 ? audioPlayer2 : audioPlayer;
     const fadeOutGain = activePlayer === 1 ? gainNode1 : gainNode2;
     const fadeInGain = activePlayer === 1 ? gainNode2 : gainNode1;
     
-    // Ensure gains are set correctly
+    // Switch activePlayer FIRST so handlePause ignores the old player's pause event
+    activePlayer = activePlayer === 1 ? 2 : 1;
+    
+    // Set gains
     if (fadeOutGain) fadeOutGain.gain.value = 0;
     if (fadeInGain) fadeInGain.gain.value = 1;
     
-    // Start new player
+    // Start new player, then stop old
     newPlayer.play().catch(e => console.error('Gapless play error:', e));
-    
-    // Stop old player immediately
     oldPlayer.pause();
     oldPlayer.currentTime = 0;
-    
-    // Switch active player
-    activePlayer = activePlayer === 1 ? 2 : 1;
     
     console.log('Gapless switch to player', activePlayer);
 }
@@ -2968,7 +2820,6 @@ function escapeHtml(text) {
     div.textContent = text || '';
     return div.innerHTML;
 }
-
 
 // ========== SERVICE WORKER ==========
 
@@ -3194,9 +3045,11 @@ muteBtn.addEventListener('click', () => {
     state.muted = !state.muted;
     if (state.muted) {
         audioPlayer.volume = 0;
+        audioPlayer2.volume = 0;
         volumeSlider.value = 0;
     } else {
         audioPlayer.volume = state.volume || 1;
+        audioPlayer2.volume = state.volume || 1;
         volumeSlider.value = (state.volume || 1) * 100;
     }
     updateMuteIcon();
@@ -3580,13 +3433,15 @@ volumeBoostSlider?.addEventListener('input', () => {
 });
 
 // Initialize EQ when audio starts playing (to resume AudioContext)
-audioPlayer.addEventListener('play', () => {
+function handleEQResume() {
     if (!audioContext) {
         initEqualizer();
     } else if (audioContext.state === 'suspended') {
         audioContext.resume();
     }
-});
+}
+audioPlayer.addEventListener('play', handleEQResume);
+audioPlayer2.addEventListener('play', handleEQResume);
 
 // ========== THEME PICKER ==========
 const themeBtn = $('#theme-btn');
@@ -6386,7 +6241,6 @@ function drawWave(ctx, dataArray, width, height) {
     ctx.stroke();
     ctx.globalAlpha = 1;
 }
-
 
 
 function drawParticles(ctx, dataArray, width, height) {
