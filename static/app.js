@@ -209,6 +209,14 @@ const queueClear = $('#queue-clear');
 const queueCount = $('#queue-count');
 const queueBtn = $('#queue-btn');
 
+// Back button: exit detail view and return to results
+backBtn?.addEventListener('click', () => {
+    detailView.classList.add('hidden');
+    resultsSection.classList.remove('hidden');
+    // Clear playlist view tracking
+    state.currentPlaylistView = null;
+});
+
 // Fullscreen Elements
 const fsToggleBtn = $('#fs-toggle-btn');
 const fullscreenPlayer = $('#fullscreen-player');
@@ -530,9 +538,44 @@ function toggleLibrary(track) {
     }
 }
 
+function addAllToLibrary(tracks) {
+    if (!tracks || tracks.length === 0) {
+        showToast('No tracks to add');
+        return 0;
+    }
+    
+    let addedCount = 0;
+    tracks.forEach(track => {
+        if (track && track.id && !isInLibrary(track.id)) {
+            // Add without individual toasts
+            const libraryEntry = {
+                id: track.id,
+                name: track.name,
+                artists: track.artists,
+                album: track.album || '',
+                album_art: track.album_art || track.image || '/static/icon.svg',
+                isrc: track.isrc || track.id,
+                duration: track.duration || '0:00',
+                addedAt: Date.now()
+            };
+            state.library.unshift(libraryEntry);
+            addedCount++;
+        }
+    });
+    
+    if (addedCount > 0) {
+        saveLibrary();
+        showToast(`★ Added ${addedCount} of ${tracks.length} tracks to Library`);
+    } else {
+        showToast('All tracks already in Library');
+    }
+    return addedCount;
+}
+
 // Expose for use in UI
 window.toggleLibrary = toggleLibrary;
 window.isInLibrary = isInLibrary;
+window.addAllToLibrary = addAllToLibrary;
 
 function renderPlaylistsView() {
     hideLoading();
@@ -1150,7 +1193,8 @@ downloadConfirmBtn.addEventListener('click', async () => {
     try {
         const query = `${track.name} ${track.artists}`;
         const isrc = track.isrc || track.id; 
-        const filename = `${track.artists} - ${track.name}.${format === 'alac' ? 'm4a' : format}`.replace(/[\\/:"*?<>|]/g, "_");
+        const ext = format === 'alac' ? 'm4a' : format.replace(/_24$/, '');
+        const filename = `${track.artists} - ${track.name}.${ext}`.replace(/[\\/:"*?<>|]/g, "_");
         
         const response = await fetch(`/api/download/${isrc}?q=${encodeURIComponent(query)}&format=${format}&filename=${encodeURIComponent(filename)}`);
         
@@ -1497,9 +1541,30 @@ function showAlbumModal(album) {
     const durationMins = Math.round(totalDuration / 60);
     
     $('#album-modal-date').textContent = `📅 ${date || 'Unknown'}`;
-    // Genre removed
     $('#album-modal-trackcount').textContent = `🎵 ${trackCount} tracks`;
     $('#album-modal-duration').textContent = `⏱️ ${durationMins || '??'} min`;
+    
+    // Add All to Library button
+    const allInLibrary = tracks.length > 0 && tracks.every(t => isInLibrary(t.id));
+    const addToLibBtn = $('#album-add-to-library-btn');
+    if (addToLibBtn) {
+        addToLibBtn.textContent = allInLibrary ? '✓ In Library' : '★ Add to Library';
+        addToLibBtn.disabled = allInLibrary;
+        addToLibBtn.classList.toggle('saved', allInLibrary);
+        addToLibBtn.onclick = () => {
+            addAllToLibrary(tracks);
+            // Update button state
+            addToLibBtn.textContent = '★ In Library';
+            addToLibBtn.disabled = true;
+            addToLibBtn.classList.add('saved');
+            // Update star buttons in track list
+            tracksContainer.querySelectorAll('.star-btn').forEach(btn => {
+                btn.textContent = '★';
+                btn.classList.add('starred');
+                btn.title = 'Remove from Library';
+            });
+        };
+    }
     
     // Quality badge
     const format = album.format || (state.hifiMode ? 'FLAC' : 'MP3');
@@ -1692,10 +1757,14 @@ function showDetailView(item, tracks) {
     
     // Render info section
     const isArtist = item.type === 'artist';
+    const isUserPlaylist = item.is_user_playlist || false;
     const image = item.album_art || item.image || '/static/icon.svg';
     const subtitle = item.artists || item.owner || (item.genres?.slice(0, 2).join(', ')) || '';
     const stats = item.total_tracks ? `${item.total_tracks} tracks` : 
                   item.followers ? `${(item.followers / 1000).toFixed(0)}K followers` : '';
+    
+    // Check if all tracks already in library
+    const allInLibrary = tracks.length > 0 && tracks.every(t => isInLibrary(t.id));
     
     detailInfo.innerHTML = `
         <img class="detail-art${isArtist ? ' artist-art' : ''}" src="${image}" alt="Cover">
@@ -1703,8 +1772,30 @@ function showDetailView(item, tracks) {
             <p class="detail-name">${escapeHtml(item.name)}</p>
             <p class="detail-artist">${escapeHtml(subtitle)}</p>
             <p class="detail-stats">${stats}</p>
+            <div class="detail-actions">
+                <button class="detail-add-library-btn ${allInLibrary ? 'saved' : ''}" ${allInLibrary ? 'disabled' : ''}>
+                    ${allInLibrary ? '★ In Library' : '★ Add All to Library'}
+                </button>
+            </div>
         </div>
     `;
+    
+    // Wire up Add All to Library button
+    const addLibBtn = detailInfo.querySelector('.detail-add-library-btn');
+    if (addLibBtn && !allInLibrary) {
+        addLibBtn.addEventListener('click', () => {
+            addAllToLibrary(tracks);
+            addLibBtn.textContent = '★ In Library';
+            addLibBtn.disabled = true;
+            addLibBtn.classList.add('saved');
+            // Update star buttons
+            detailTracks.querySelectorAll('.star-btn').forEach(btn => {
+                btn.textContent = '★';
+                btn.classList.add('starred');
+                btn.title = 'Remove from Library';
+            });
+        });
+    }
     
     // Render tracks with download button (and delete for user playlists)
     detailTracks.innerHTML = tracks.map((t, i) => {

@@ -10,6 +10,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.1.8] - 2026-02-24
+
+### Added
+- **Add Album to Library**: New "★ Add to Library" button on album detail modal — adds all tracks at once, skips duplicates, shows gold ★ saved state when complete.
+- **Add Playlist to Library**: New "★ Add All to Library" button on playlist/artist detail view header — same batch-add behavior with dedup and instant UI feedback.
+- **Delete Songs from Playlist**: Per-track ✕ remove buttons now visible on user-created playlists in the detail view. Playlist refreshes immediately after removal.
+
+### Fixed
+- **Playlists Not Opening**: Fixed critical `ReferenceError` — `isUserPlaylist` was used in `showDetailView` but never declared, crashing the entire function silently.
+- **Back Button Not Working**: The ← Back button on the detail view was declared but never had a click handler attached. Now correctly exits detail view and returns to results.
+- **Download Filename for 24-bit**: `aiff_24` and `wav_24` formats produced invalid `.aiff_24` / `.wav_24` file extensions. Now correctly strips the `_24` suffix from the extension.
+- **Genius Lyrics Not Loading**: Lyrics scraper was sending requests without a browser User-Agent, causing Genius to block from cloud IPs. Added Chrome-like headers, multiple CSS selector fallbacks, JSON extraction fallback, and detailed logging.
+
+### Changed
+- **Library Button Consistency**: All "Add to Library" buttons now use the ★ gold star icon to match existing per-track star buttons throughout the app.
+
+---
+
 ## [1.1.7] - 2026-02-24
 
 ### Fixed

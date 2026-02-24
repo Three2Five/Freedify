@@ -97,38 +97,82 @@ class GeniusService:
     async def scrape_lyrics(self, genius_url: str) -> Optional[str]:
         """Scrape lyrics from a Genius song page."""
         try:
-            # Fetch the page
-            response = await self.client.get(genius_url, follow_redirects=True)
+            # Use browser-like headers to avoid being blocked by Genius
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+            
+            response = await self.client.get(genius_url, follow_redirects=True, headers=headers)
+            
+            if response.status_code == 403:
+                logger.warning(f"Genius returned 403 for: {genius_url} - likely IP blocked")
+                return None
+            if response.status_code == 429:
+                logger.warning(f"Genius rate limited for: {genius_url}")
+                return None
+                
             response.raise_for_status()
             
-            soup = BeautifulSoup(response.text, "html.parser")
+            html_text = response.text
+            logger.info(f"Genius page fetched, size: {len(html_text)} bytes for {genius_url}")
             
-            # Genius uses data-lyrics-container for lyrics sections
+            soup = BeautifulSoup(html_text, "html.parser")
+            
+            # Method 1: data-lyrics-container (current Genius format)
             lyrics_containers = soup.find_all("div", {"data-lyrics-container": "true"})
             
             if lyrics_containers:
                 lyrics_parts = []
                 for container in lyrics_containers:
-                    # Get text, preserving line breaks
                     for br in container.find_all("br"):
                         br.replace_with("\n")
                     lyrics_parts.append(container.get_text())
                 
                 lyrics = "\n".join(lyrics_parts)
-                # Clean up extra whitespace
                 lyrics = re.sub(r'\n{3,}', '\n\n', lyrics)
-                return lyrics.strip()
+                if lyrics.strip():
+                    logger.info(f"Lyrics found via data-lyrics-container ({len(lyrics)} chars)")
+                    return lyrics.strip()
             
-            # Fallback: try older format
+            # Method 2: Lyrics__Container class (alternate Genius layout)
+            lyrics_containers_alt = soup.find_all("div", class_=re.compile(r"Lyrics__Container"))
+            if lyrics_containers_alt:
+                lyrics_parts = []
+                for container in lyrics_containers_alt:
+                    for br in container.find_all("br"):
+                        br.replace_with("\n")
+                    lyrics_parts.append(container.get_text())
+                
+                lyrics = "\n".join(lyrics_parts)
+                lyrics = re.sub(r'\n{3,}', '\n\n', lyrics)
+                if lyrics.strip():
+                    logger.info(f"Lyrics found via Lyrics__Container ({len(lyrics)} chars)")
+                    return lyrics.strip()
+            
+            # Method 3: older Genius format
             lyrics_div = soup.find("div", class_="lyrics")
             if lyrics_div:
-                return lyrics_div.get_text().strip()
+                text = lyrics_div.get_text().strip()
+                if text:
+                    logger.info(f"Lyrics found via .lyrics div ({len(text)} chars)")
+                    return text
             
-            logger.warning(f"Could not find lyrics on page: {genius_url}")
+            # Method 4: Try finding any div with [data-lyrics-container] in the raw HTML
+            # (in case BeautifulSoup parsing missed it)
+            import json
+            match = re.search(r'"lyrics":\s*\{[^}]*"plain":\s*"([^"]+)"', html_text)
+            if match:
+                lyrics = match.group(1).replace("\\n", "\n")
+                logger.info(f"Lyrics found via JSON extraction ({len(lyrics)} chars)")
+                return lyrics
+            
+            logger.warning(f"Could not find lyrics on page: {genius_url} (page size: {len(html_text)} bytes)")
             return None
             
         except Exception as e:
-            logger.error(f"Genius lyrics scrape error: {e}")
+            logger.error(f"Genius lyrics scrape error for {genius_url}: {e}")
             return None
     
     async def get_song_referents(self, song_id: int) -> list:

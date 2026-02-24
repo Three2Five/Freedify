@@ -3815,6 +3815,64 @@ body {
     background: var(--accent-light);
 }
 
+/* Saved state for Add to Library button */
+.album-action-btn.saved,
+.album-action-btn:disabled {
+    background: rgba(255, 193, 7, 0.15);
+    border-color: #ffc107;
+    color: #ffc107;
+    cursor: default;
+    opacity: 0.9;
+}
+
+/* Detail view Add All to Library button */
+.detail-actions {
+    margin-top: var(--spacing-sm);
+}
+
+.detail-add-library-btn {
+    padding: 8px 16px;
+    border-radius: var(--radius-full);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid var(--text-tertiary);
+    background: transparent;
+    color: var(--text-primary);
+}
+
+.detail-add-library-btn:hover:not(:disabled) {
+    background: var(--bg-tertiary);
+    border-color: var(--accent);
+}
+
+.detail-add-library-btn.saved,
+.detail-add-library-btn:disabled {
+    background: rgba(255, 193, 7, 0.15);
+    border-color: #ffc107;
+    color: #ffc107;
+    cursor: default;
+    opacity: 0.9;
+}
+
+/* Delete track from playlist button */
+.delete-track-btn {
+    background: none;
+    border: none;
+    color: var(--text-tertiary);
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.delete-track-btn:hover {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.1);
+}
+
 /* Quality Badge */
 .album-quality-badge {
     font-size: 0.75rem;
