@@ -334,6 +334,29 @@
             </div>
         </div>
 
+        <!-- Podcast Episode Details Modal -->
+        <div id="podcast-modal" class="podcast-modal hidden">
+            <div class="album-modal-overlay"></div>
+            <div class="podcast-modal-content">
+                <button id="podcast-modal-close" class="podcast-modal-close" title="Close">×</button>
+                <div class="album-modal-body">
+                    <img id="podcast-modal-art" class="podcast-modal-art" src="" alt="Episode Art">
+                    <h3 id="podcast-modal-title" class="podcast-modal-title">Episode Title</h3>
+                    
+                    <div class="album-meta-pills" style="justify-content: center; margin-bottom: 15px;">
+                        <span id="podcast-modal-date" class="podcast-modal-date meta-pill"></span>
+                        <span id="podcast-modal-duration" class="podcast-modal-duration meta-pill"></span>
+                    </div>
+                    
+                    <div id="podcast-modal-description" class="podcast-modal-description" style="text-align: left; margin-bottom: 20px; font-size: 0.9rem; color: var(--text-secondary); max-height: 200px; overflow-y: auto;"></div>
+                    
+                    <div class="podcast-modal-actions" style="display: flex; justify-content: center;">
+                        <button id="podcast-modal-play" class="podcast-modal-play album-action-btn primary" style="padding: 10px 30px; font-size: 1rem;">▶ Play Episode</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Bottom Player -->
         <div id="player-bar" class="player-bar hidden">
             <!-- Main visible row (Art + Info + Primary Controls) -->

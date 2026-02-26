@@ -7,26 +7,31 @@ services:
     container_name: freedify
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - PORT=8000
       - MP3_BITRATE=320k
-      # Optional - Timezone (for NAS users)
-      # - TZ=America/New_York
-      # Optional - User/Group ID for file permissions (Synology/NAS)
-      # - PUID=1000
-      # - PGID=1000
-      # Optional - Hi-Res Audio (get from dabmusic.xyz cookies)
-      # - DAB_SESSION=your_session_cookie
-      # - DAB_VISITOR_ID=your_visitor_id
-      # Optional - AI Features (get from aistudio.google.com)
-      # - GEMINI_API_KEY=your_api_key
-      # Optional - Lyrics
-      # - GENIUS_ACCESS_TOKEN=your_token
-      # Optional - ListenBrainz scrobbling
-      # - LISTENBRAINZ_TOKEN=your_token
-      # Optional - Podcasts (falls back to iTunes if not set)
-      # - PODCASTINDEX_KEY=your_key
-      # - PODCASTINDEX_SECRET=your_secret
+      # Below variables map to your local .env file.
+      # You do not need to edit these here.
+      - TZ=${TZ:-America/New_York}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
+      - DAB_SESSION=${DAB_SESSION:-}
+      - DAB_VISITOR_ID=${DAB_VISITOR_ID:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - GENIUS_ACCESS_TOKEN=${GENIUS_ACCESS_TOKEN:-}
+      - LISTENBRAINZ_TOKEN=${LISTENBRAINZ_TOKEN:-}
+      - PODCASTINDEX_KEY=${PODCASTINDEX_KEY:-}
+      - PODCASTINDEX_SECRET=${PODCASTINDEX_SECRET:-}
+      - TICKETMASTER_API_KEY=${TICKETMASTER_API_KEY:-}
+      - SEATGEEK_CLIENT_ID=${SEATGEEK_CLIENT_ID:-}
+      - SETLIST_FM_API_KEY=${SETLIST_FM_API_KEY:-}
+      - SPOTIFY_CLIENT_ID=${SPOTIFY_CLIENT_ID:-}
+      - SPOTIFY_CLIENT_SECRET=${SPOTIFY_CLIENT_SECRET:-}
+      - SPOTIFY_SP_DC=${SPOTIFY_SP_DC:-}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - JAMENDO_CLIENT_ID=${JAMENDO_CLIENT_ID:-}
     volumes:
       # Persist cache for faster repeated plays
       - freedify-cache:/app/cache

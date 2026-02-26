@@ -10,6 +10,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.1.9] - 2026-02-26
+
+### Added
+- **Docker `.env` Security**: Complete refactor of `docker-compose.yml` to securely pull all API keys from a private `.env` file instead of hardcoding them. Added `.env.example` template for public repo sharing.
+- **Git Ignore**: Strictly ignored `.env` files in `.gitignore` to prevent API keys (Gemini, Ticketmaster, Setlist.fm, Spotify, etc.) from being accidentally committed to public repositories.
+
+### Fixed
+- **Podcast Episode Modal Not Opening**: Fixed a critical `SyntaxError` caused by unescaped single quotes (apostrophes) in podcast descriptions breaking the inline JSON `onclick` handler.
+- **Podcast Modal Type Error**: Fixed `showPodcastModal` attempting to access properties on a URL-encoded JSON string instead of a parsed javascript Object, restoring the ability to read episode notes and play individual podcasts.
+- **Podcast Modal HTML Missing**: Restored the missing `podcast-modal` DOM layout to `index.html` which previously prevented the modal from rendering.
+
+---
+
 ## [1.1.8] - 2026-02-24
 
 ### Added

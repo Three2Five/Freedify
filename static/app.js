@@ -1850,9 +1850,9 @@ function showDetailView(item, tracks) {
                 <span class="track-duration">${t.duration}</span>
                 <button class="star-btn ${isStarred ? 'starred' : ''}" data-track-id="${t.id}" title="${isStarred ? 'Remove from Library' : 'Add to Library'}">${isStarred ? '★' : '☆'}</button>
                 ${t.source === 'podcast' ? `
-                <button class="info-btn" title="Episode Details" onclick="event.stopPropagation(); showPodcastModal('${encodeURIComponent(JSON.stringify(t))}')">ℹ️</button>
+                <button class="info-btn" title="Episode Details" onclick="event.stopPropagation(); showPodcastModal('${encodeURIComponent(JSON.stringify(t)).replace(/'/g, "%27")}')">ℹ️</button>
                 ` : ''}
-                <button class="download-btn" title="Download" onclick="event.stopPropagation(); openDownloadModal('${encodeURIComponent(JSON.stringify(t))}')">
+                <button class="download-btn" title="Download" onclick="event.stopPropagation(); openDownloadModal('${encodeURIComponent(JSON.stringify(t)).replace(/'/g, "%27")}')">
                     ⬇
                 </button>
                 ${isUserPlaylist ? `
@@ -4136,22 +4136,32 @@ const podcastModalPlay = $('#podcast-modal-play');
 
 let currentPodcastEpisode = null;
 
-function showPodcastModal(track) {
-    if (!track || track.source !== 'podcast') return;
+function showPodcastModal(trackJson) {
+    if (!trackJson) return;
     
-    currentPodcastEpisode = track;
-    
-    podcastModalArt.src = track.album_art || '/static/icon.svg';
-    podcastModalTitle.textContent = track.name;
-    podcastModalDate.textContent = track.datePublished || '';
-    podcastModalDuration.textContent = `Duration: ${track.duration}`;
-    
-    // Strip HTML tags from description and decode entities
-    const tempDiv = document.createElement('div');
-    tempDiv.innerHTML = track.description || 'No description available.';
-    podcastModalDescription.textContent = tempDiv.textContent || tempDiv.innerText;
-    
-    podcastModal.classList.remove('hidden');
+    try {
+        const track = typeof trackJson === 'string' 
+            ? JSON.parse(decodeURIComponent(trackJson)) 
+            : trackJson;
+            
+        if (track.source !== 'podcast') return;
+        
+        currentPodcastEpisode = track;
+        
+        podcastModalArt.src = track.album_art || '/static/icon.svg';
+        podcastModalTitle.textContent = track.name;
+        podcastModalDate.textContent = track.datePublished || '';
+        podcastModalDuration.textContent = `Duration: ${track.duration}`;
+        
+        // Strip HTML tags from description and decode entities
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = track.description || 'No description available.';
+        podcastModalDescription.textContent = tempDiv.textContent || tempDiv.innerText;
+        
+        podcastModal.classList.remove('hidden');
+    } catch (e) {
+        console.error('Error opening podcast modal:', e);
+    }
 }
 window.showPodcastModal = showPodcastModal;
 
