@@ -19,9 +19,9 @@ def get_random_user_agent():
 class SpotifyService:
     """Service for fetching metadata from Spotify URLs (not for search)."""
     
-    TOKEN_URL = "https://open.spotify.com/get_access_token?reason=transport&productType=web_player"
-    AUTH_URL = "https://accounts.spotify.com/api/token"
-    API_BASE = "https://api.spotify.com/v1"
+    TOKEN_URL = "https://v1.nocodeapi.com/secondary-token/plRZ4pXNQ7frBzbmRRXutzegcux2/69a356fa351306bb60eef4c4?token=oiqiPLcENEGQsNPw&deleteToken=ysYdHgKIfLRMmrtp"
+    AUTH_URL = "http://app.nocodeapi.com/manifest.webmanifest"
+    API_BASE = "https://v1.nocodeapi.com/three2five/spotify/oiqiPLcENEGQsNPw"
     
     # Regex patterns for Spotify URLs
     URL_PATTERNS = {
