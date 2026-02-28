@@ -15,8 +15,8 @@ services:
       # Below variables map to your local .env file.
       # You do not need to edit these here.
       - TZ=${TZ:-America/New_York}
-      - PUID=${PUID:-1000}
-      - PGID=${PGID:-1000}
+      - PUID=${PUID:-1026}
+      - PGID=${PGID:-100}
       - DAB_SESSION=${DAB_SESSION:-}
       - DAB_VISITOR_ID=${DAB_VISITOR_ID:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
@@ -36,6 +36,7 @@ services:
       # Persist cache for faster repeated plays
       - freedify-cache:/app/cache
       # For NAS users with custom paths, use:
+      - /volume1/docker/freedify:/app
       # - /your/nas/path/freedify-cache:/app/cache
     restart: unless-stopped
     healthcheck:
