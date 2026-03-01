@@ -34,10 +34,12 @@ services:
       - JAMENDO_CLIENT_ID=${JAMENDO_CLIENT_ID:-}
     volumes:
       # Persist cache for faster repeated plays
-      - freedify-cache:/app/cache
+      - /volume1/docker/freedify:/app/cache
       # For NAS users with custom paths, use:
       - /volume1/docker/freedify:/app
       # - /your/nas/path/freedify-cache:/app/cache
+      - /volume1/docker/freedify:/data
+      - /volume1/docker/freedify:/config
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/health')" ]
