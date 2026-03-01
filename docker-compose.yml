@@ -40,6 +40,7 @@ services:
       # - /your/nas/path/freedify-cache:/app/cache
       - /volume1/docker/freedify:/data
       - /volume1/docker/freedify:/config
+      - /volume1/docker/freedify:/var/services/homes/Three2Five/Freedify
     restart: unless-stopped
     healthcheck:
       test: [ "CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/health')" ]
