@@ -6,17 +6,17 @@ services:
     #build: .
     container_name: freedify
     ports:
-      - "8000:8000"
+      - "8777:8777"
     env_file:
       - .env
     environment:
-      - PORT=8000
+      - PORT=8777
       - MP3_BITRATE=320k
       # Below variables map to your local .env file.
       # You do not need to edit these here.
       - TZ=${TZ:-America/New_York}
-      - PUID=${PUID:-1026}
-      - PGID=${PGID:-100}
+      - PUID=${PUID:-1000}
+      - PGID=${PGID:-1000}
       - DAB_SESSION=${DAB_SESSION:-}
       - DAB_VISITOR_ID=${DAB_VISITOR_ID:-}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
@@ -35,16 +35,12 @@ services:
       - PREMIUMIZE_API_KEY=${PREMIUMIZE_API_KEY:-}
     volumes:
       # Persist cache for faster repeated plays
-      - /volume1/docker/freedify:/app/cache
+      - freedify-cache:/home/three2five/freedify
       # For NAS users with custom paths, use:
-      - /volume1/docker/freedify:/app
-      # - /your/nas/path/freedify-cache:/app/cache
-      - /volume1/docker/freedify:/data
-      - /volume1/docker/freedify:/config
-      - /volume1/docker/freedify:/var/services/homes/Three2Five/Freedify
+      - /home/three2five/freedify/freedify-cache:/app/cache
     restart: unless-stopped
     healthcheck:
-      test: [ "CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/api/health')" ]
+      test: [ "CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8777/api/health')" ]
       interval: 30s
       timeout: 10s
       retries: 3
