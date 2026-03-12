@@ -3,7 +3,7 @@ services:
     # Option 1: Use pre-built image from Docker Hub (recommended)
     image: biohaphazard/freedify:latest
     # Option 2: Build from source (uncomment below, comment out image above)
-    #build: .
+    # build: .
     container_name: freedify
     ports:
       - "8777:8777"
