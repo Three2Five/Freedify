@@ -17,7 +17,7 @@ def get_random_user_agent():
 
 
 class SpotifyService:
-     """Service for fetching metadata from Spotify URLs (not for search)."""
+    """Service for fetching metadata from Spotify URLs (not for search)."""
     
     TOKEN_URL = "https://open.spotify.com/get_access_token?reason=transport&productType=web_player"
     AUTH_URL = "https://accounts.spotify.com/api/token"
