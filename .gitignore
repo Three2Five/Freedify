@@ -40,6 +40,7 @@ ENV/
 # Cache
 cache/
 *.cache
+.agent/workflows
 
 # OS
 .DS_Store
@@ -48,3 +49,7 @@ Thumbs.db
 # Secrets (if any)
 secrets.json
 *.key
+freedify_settings.json
+
+# Tests
+test_*.py

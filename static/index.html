@@ -13,7 +13,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Orbitron:wght@400;700;900&family=Permanent+Marker&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="/static/styles.css?t=1737202004">
+    <link rel="stylesheet" href="/static/styles.css?t=1775050000">
     <!-- Google API for Drive sync -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://apis.google.com/js/api.js" async defer></script>
@@ -79,6 +79,10 @@
             <div class="theme-option" data-theme="theme-green">💚 Green</div>
             <div class="theme-option" data-theme="theme-pink">💕 Pink</div>
             <div class="theme-option" data-theme="theme-orange">🧡 Orange</div>
+            <div class="theme-option" data-theme="theme-dracula">🧛 Dracula</div>
+            <div class="theme-option" data-theme="theme-catppuccin">☕ Catppuccin</div>
+            <div class="theme-option" data-theme="theme-nightowl">🦉 Night Owl</div>
+            <div class="theme-option" data-theme="theme-nuclear">☢️ Nuclear</div>
         </div>
 
         <!-- Search Section -->
@@ -101,6 +105,7 @@
                 <button class="type-btn" data-type="album">Albums</button>
                 <button class="type-btn" data-type="artist">Artists</button>
                 <button class="type-btn" data-type="podcast">Podcasts</button>
+                <button class="type-btn" data-type="audiobook">Audiobooks</button>
                 <button id="search-more-btn" class="type-btn more-btn">⋮ More</button>
             </div>
             
@@ -113,6 +118,11 @@
                 <button class="menu-item type-btn-menu" data-type="setlist">Setlists</button>
                 <button class="menu-item type-btn-menu" data-type="rec">For You</button>
                 <button class="menu-item type-btn-menu" data-type="favorites">Playlists</button>
+                <button class="menu-item" id="import-playlist-menu-btn">📥 Import Playlist</button>
+                <div class="menu-divider"></div>
+                <button class="menu-item" id="lastfm-menu-btn">🎵 Connect Last.fm</button>
+                <button class="menu-item" id="spotify-connect-btn">🟢 Connect Spotify</button>
+                <a href="https://pally.gg/p/freedify" target="_blank" rel="noopener noreferrer" class="menu-item" style="text-decoration: none; color: inherit; display: block;">💖 Donate</a>
             </div>
         </section>
 
@@ -202,6 +212,15 @@
                     <button id="shuffle-btn" class="shuffle-btn" title="Shuffle & Play">Shuffle</button>
                     <button id="queue-all-btn" class="queue-all-btn">Add All to Queue</button>
                     <button id="download-all-btn" class="download-all-btn">Download ZIP</button>
+                    
+                    <div class="export-dropdown-container">
+                        <button id="detail-export-btn" class="export-btn" title="Export Playlist">📤</button>
+                        <div id="detail-export-menu" class="export-menu hidden">
+                            <button class="export-option" data-target="detail" data-format="m3u">Export M3U</button>
+                            <button class="export-option" data-target="detail" data-format="csv">Export CSV</button>
+                            <button class="export-option" data-target="detail" data-format="json">Export JSON</button>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div id="detail-info" class="detail-info">
@@ -217,6 +236,14 @@
             <div class="queue-header">
                 <h3>Queue <span id="queue-count">(0)</span></h3>
                 <div class="queue-controls">
+                    <div class="export-dropdown-container">
+                        <button id="queue-export-btn" class="export-btn" title="Export Queue">📤</button>
+                        <div id="queue-export-menu" class="export-menu hidden">
+                            <button class="export-option" data-target="queue" data-format="m3u">Export M3U</button>
+                            <button class="export-option" data-target="queue" data-format="csv">Export CSV</button>
+                            <button class="export-option" data-target="queue" data-format="json">Export JSON</button>
+                        </div>
+                    </div>
                     <button id="queue-download-btn" class="queue-download-btn" title="Download Selected">⬇</button>
                     <button id="queue-clear" class="queue-clear">Clear</button>
                     <button id="queue-close" class="queue-close-btn" title="Close Queue">×</button>
@@ -357,7 +384,86 @@
             </div>
         </div>
 
-        <!-- Bottom Player -->
+        <!-- Audiobook Details Modal -->
+        <div id="audiobook-modal" class="album-modal hidden">
+            <div class="album-modal-overlay"></div>
+            <div class="album-modal-content">
+                <div class="album-modal-header">
+                    <button id="audiobook-modal-close" class="album-modal-close" title="Close">×</button>
+                    <h2>Audiobook Details</h2>
+                </div>
+                
+                <div class="album-modal-body">
+                    <div class="album-modal-info">
+                        <img id="audiobook-modal-art" class="album-modal-art" src="" alt="Audiobook Cover">
+                        <div class="album-modal-meta">
+                            <h3 id="audiobook-modal-title" class="album-modal-title">Audiobook Title</h3>
+                            
+                            <!-- Action Buttons -->
+                            <div class="album-action-buttons">
+                                <button id="audiobook-download-btn" class="album-action-btn primary">☁️ Download to Premiumize</button>
+                            </div>
+                            
+                            <!-- Progress Bar -->
+                            <div id="audiobook-progress-container" class="hidden" style="margin-top: 15px;">
+                                <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                                    <span id="audiobook-progress-status" style="font-size: 0.9rem;">Starting...</span>
+                                    <span id="audiobook-progress-percent" style="font-size: 0.9rem; font-weight: bold;">0%</span>
+                                </div>
+                                <div class="progress-bar" style="background: var(--bg-surface); cursor: default; height: 8px; border-radius: 4px; overflow: hidden;">
+                                    <div id="audiobook-progress-fill" style="height: 100%; background: var(--primary-color); width: 0%; transition: width 0.3s ease;"></div>
+                                </div>
+                            </div>
+                            
+                            <!-- Quality Badge -->
+                            <div id="audiobook-modal-quality" class="album-quality-badge" style="margin-top: 15px;">
+                                AudiobookBay Torrent
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Audiobook Info -->
+                    <div id="audiobook-modal-info-tab" class="album-modal-info-tab">
+                        <p id="audiobook-modal-description" style="white-space: pre-wrap; margin-top: 20px;">Audiobook description...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Book Info Modal (My Books) -->
+        <div id="book-info-modal" class="book-info-modal hidden">
+            <div class="book-info-overlay"></div>
+            <div class="book-info-content">
+                <button id="book-info-close" class="book-info-close" title="Close">×</button>
+                <div class="book-info-header">
+                    <img id="book-info-art" class="book-info-art" src="" alt="Book Cover">
+                    <div class="book-info-meta">
+                        <h2 id="book-info-title">Book Title</h2>
+                        <p id="book-info-author" class="book-info-author">Author</p>
+                        <div id="book-info-badges" class="book-info-badges"></div>
+                        <div class="book-info-actions">
+                            <button id="book-info-play-btn" class="album-action-btn primary">▶ Play</button>
+                            <button id="book-info-chapters-btn" class="album-action-btn">📑 Chapters</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="book-info-tabs">
+                    <button class="book-info-tab active" data-tab="description">Description</button>
+                    <button class="book-info-tab" data-tab="reviews">Goodreads Reviews</button>
+                </div>
+                <div id="book-info-desc-tab" class="book-info-tab-content active">
+                    <div id="book-info-description" class="book-info-description">Loading description...</div>
+                </div>
+                <div id="book-info-reviews-tab" class="book-info-tab-content">
+                    <div id="book-info-goodreads" class="book-info-goodreads">
+                        <div class="book-info-loading">
+                            <div class="spinner"></div>
+                            <p>Fetching Goodreads data...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div id="player-bar" class="player-bar hidden">
             <!-- Main visible row (Art + Info + Primary Controls) -->
             <div class="player-main-row">
@@ -371,6 +477,7 @@
                             <span id="player-album" class="player-album clickable" title="View album">-</span>
                             <span id="player-year" class="player-year"></span>
                             <span id="audio-format-badge" class="audio-format-badge hidden">MP3</span>
+                            <button id="playback-speed-btn" class="audio-format-badge hidden" style="cursor: pointer; border: none; outline: none; background: var(--bg-elevated); color: var(--text-primary);" title="Playback Speed">1.0x</button>
                         </div>
                     </div>
                 </div>
@@ -686,6 +793,38 @@
 
 
 
+    <!-- Artist Bio Modal (Slide-up) -->
+    <div id="artist-bio-modal" class="artist-bio-modal hidden">
+        <div class="artist-bio-overlay" id="artist-bio-overlay"></div>
+        <div class="artist-bio-content">
+            <div class="artist-bio-drag-handle"></div>
+            <button id="artist-bio-close" class="artist-bio-close">×</button>
+            <div class="artist-bio-scroll-area">
+                <div class="artist-bio-header">
+                    <img id="artist-bio-img" class="artist-bio-img" src="/static/icon.svg" alt="Artist Image">
+                    <div class="artist-bio-header-info">
+                        <h2 id="artist-bio-name">Artist Name</h2>
+                        <div id="artist-bio-genres" class="artist-bio-genres"></div>
+                    </div>
+                </div>
+                <div class="artist-bio-body">
+                    <div class="artist-bio-section">
+                        <h3>About</h3>
+                        <div id="artist-bio-text" class="artist-bio-text loading-pulse"></div>
+                    </div>
+                    <div class="artist-bio-section" id="artist-socials-section">
+                        <h3>Links</h3>
+                        <div id="artist-bio-socials" class="artist-bio-socials"></div>
+                    </div>
+                    <div class="artist-bio-section" id="artist-similar-section">
+                        <h3>Similar Artists</h3>
+                        <div id="artist-bio-similar" class="artist-bio-similar-list"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Setlist Detail Modal -->
     <div id="setlist-modal" class="modal hidden">
         <div class="modal-content setlist-modal-content" style="max-height: 80vh; overflow-y: auto;">
@@ -820,6 +959,6 @@
     <script src="static/jsmediatags.min.js"></script>
     <script src="https://apis.google.com/js/api.js"></script>
     <script src="https://accounts.google.com/gsi/client"></script>
-    <script src="/static/app.js?t=1737202000"></script>
+    <script src="/static/app.js?t=1775050000"></script>
 </body>
 </html>

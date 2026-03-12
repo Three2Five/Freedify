@@ -10,6 +10,156 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [1.3.7] - 2026-03-10
+
+### Added
+- **Playlist Management**: Added ♡ "Add All to Playlist" and per-track ♡ "Add to Playlist" buttons to the playlist detail view.
+- **Render Keep-Alive**: Added an automatic background ping task to the FastAPI lifespan that pings the application's `RENDER_EXTERNAL_URL` every 13 minutes, preventing free-tier servers from spinning down due to inactivity.
+- **Spotify Embed Scraping Fallback**: When the Spotify API returns a 403 Forbidden error for public playlists or albums, Freedify now seamlessly falls back to scraping track data directly from Spotify's embed pages.
+- **Deezer Album Art Enrichment**: Songs imported via the Spotify embed fallback now use concurrent Deezer searches to automatically fetch and attach the correct high-quality album artwork for each individual track instead of reusing the playlist cover.
+
+### Fixed
+- **Spotify Token Retrieval Dead Code**: Removed unreachable auth code in the Spotify integration service that prevented fallback token acquisition strategies.
+
+---
+
+## [1.3.6] - 2026-03-09
+
+### Added
+- **Tidal Hi-Res FLAC APIs**: Added multiple new upstream proxy APIs capable of resolving and streaming true 24-bit Hi-Res LOSSLESS FLAC tracks directly from Tidal.
+- **Stream URL Cache**: Seeking around a track now instantly reuses the existing upstream stream URL without re-triggering the full API search chain, saving significant battery and bandwidth.
+- **Dynamic Quality Badging**: The "Now Playing" UI now extracts `X-Audio-Quality` and `Content-Type` directly from stream headers via an instantaneous pre-flight `HEAD` request. Badges proudly display **HI-RES** (24-bit), **HIFI** (16-bit), **M4B**, or **MP3** dynamically.
+
+### Improved
+- **API Search Pipeline Redesign**: Audio routing logic is now separated into two explicitly distinct paths based on the Hi-Res toggle state, prioritizing the fastest possible Time-To-First-Byte for 16-bit audio, and maximum quality for 24-bit audio. 
+- **Parallel Proxy Racing**: Greatly reduced latency when fetching Tidal Hi-Res streams by racing the top 3 proxies in parallel (first one to answer wins), abandoning the old sequential 1-by-1 cascade check.
+- **Tidal API Pre-Warming**: The API fallback list is now synced immediately during app startup, rather than blocking the very first song play request of the session.
+- **Album Art Deferral**: Album art fetching is now fully deferred in the proxy streaming path, shaving ~300ms off track load times (downloads continue to receive fully embedded FLAC cover art).
+
+### Fixed
+- **Hi-Res Fallback Breakage**: Fixed a critical bug where the app failed to play anything if a requested Hi-Res track only existed in 16-bit. It now seamlessly falls back to 16-bit LOSSLESS and updates the UI badge accordingly.
+- **Manifest Decode Error Noise**: Fixed proxy error log pollution caused by Tidal APIs returning empty manifests for tracks unavailable in 24-bit; these are now gracefully handled as deliberate HTTP 200 "not available" responses.
+
+---
+
+## [1.3.5] - 2026-03-07
+
+### Added
+- **Audiobook Playback Speed**: Added adjustable playback speed controls (1x, 1.25x, 1.5x, 2x) to the player bar when listening to audiobooks.
+
+### Fixed
+- **Premiumize Root File Detection**: Fixed an issue where single-file audiobooks downloaded to the root directory were not detected, enabling seamless mapping and playback.
+- **Audiobook Metadata Mismatch**: Resolved a bug where saving a direct-file audiobook resulted in incorrect metadata (e.g., retrieving "The Shining" instead of the actual book) by standardizing the `showDetailView` object structure.
+- **Audiobook Streaming Links**: Corrected the internal ISRC Base64 formatting for direct Premiumize file streams so the audio engine can actually play them.
+
+---
+
+## [1.3.4] - 2026-03-07
+
+### Fixed
+- **Audiobook History Playback**: Recently played audiobook chapters now play from Premiumize cache instead of falling back to YouTube. Stream URLs are stored in history entries with a fallback resolver for older entries.
+- **Search Type Navigation**: Clicking Song, Artist, or Album search tabs now shows the Jump Back In dashboard when the search bar is empty, instead of staying stuck on the Podcasts/Audiobooks view.
+- **Audiobook History Separation**: Audiobook chapters no longer appear in the Podcast "Recently Played" section. Added a separate `audiobookHistory` with automatic migration of existing entries.
+
+### Added
+- **Recently Played Chapters**: New section on the My Books page showing last 10 played audiobook chapters with resume position indicators.
+- **Docker Chromium Support**: Dockerfile now installs Chromium and chromedriver for AudiobookBay's Selenium-based Cloudflare bypass.
+- **`PREMIUMIZE_API_KEY`**: Added to `docker-compose.yml` and README environment variable docs for audiobook streaming.
+
+### Improved
+- **Docker Build**: Suppressed pip root user warning with `PIP_ROOT_USER_ACTION=ignore`.
+- **Selenium Fallback**: AudiobookBay scraper uses system Chromium in Docker, falls back to webdriver-manager for local development.
+- **Google Drive Sync**: Audiobook history now syncs alongside podcast history and other data.
+
+---
+
+## [1.3.3] - 2026-03-07
+
+### Added
+- **My Podcasts Favorites Page**: Save and manage favorite podcasts with ❤️ toggle on search cards and a dedicated grid view. Click the Podcasts tab to see your saved shows.
+- **Episode Resume Position**: Automatically saves playback position for podcast episodes and resumes where you left off.
+- **Mark as Played**: Toggle episodes as played/unplayed with ✅ buttons — automatically marks episodes as played when they finish.
+- **Podcast Episode History**: Recently played episodes section on the My Podcasts page with resume indicators.
+- **Podcast Categories/Tags**: Tag podcasts with custom categories (e.g., Tech, Comedy) and filter your favorites by tag.
+- **Episode Download**: Download podcast episodes via the existing download infrastructure from the episode detail view.
+- **Podcast Queue Integration**: Podcast episodes seamlessly integrate with the existing queue system with source-aware tracking.
+- **Unplayed Episode Indicators**: Resume position indicators appear on episode rows showing where you stopped listening.
+- **My Books (Audiobooks)**: Dedicated audiobook bookshelf in the Audiobooks tab. Favorite audiobooks from AudiobookBay search, cache Premiumize downloads, and resume playback across sessions.
+- **Book Info Modal**: Click any book in My Books to view a rich detail modal with cover art, chapter count, and play/resume controls.
+- **Goodreads Integration**: Book Info modal fetches Goodreads ratings, descriptions, genres, and top 5 community reviews via a score-based search that filters out derivative "summary" books.
+- **Audiobook Resume from My Books**: Cached audiobook tracks are stored locally so subsequent plays from My Books resume correctly without re-fetching from Premiumize.
+- **Google Drive Sync**: All podcast and audiobook data (favorites, played status, resume positions, history, tags, cached tracks) syncs to Google Drive alongside existing data.
+
+### New Backend Services
+- **`goodreads_service.py`**: Goodreads web scraper using httpx + BeautifulSoup — searches books, parses ratings/reviews/descriptions, filters derivative books via scoring.
+- **`audiobookbay_service.py`**: AudiobookBay search and detail scraper for audiobook discovery.
+- **`premiumize_service.py`**: Premiumize.me integration for audiobook torrent caching and streaming.
+
+---
+
+## [1.3.2] - 2026-03-02
+
+### Added
+- **Podcast Playback Speed Control**: Listeners can now toggle podcast playback speed between 0.8x, 1.0x, 1.25x, 1.5x, and 2.0x via the player bar.
+- **Dynamic Fullscreen Theming**: The fullscreen view now features a gorgeous blurred and tinted background effect dynamically derived from the current track's album art.
+- **Premium Color Themes**: Added 4 new curated developer themes ported directly from Aonsoku: Dracula, Catppuccin, Night Owl, and Nuclear.
+
+---
+
+## [1.3.1] - 2026-03-02
+
+### Fixed
+- **Android Background Playback**: Resolved multiple issues causing playback pauses and queue stalls when the browser is backgrounded or screen is locked on Android.
+- **Lock Screen Controls**: Fully implemented MediaSession API to enable OS-level next, previous, play, and pause buttons on the Android lock screen and notification panel.
+- **Headphone Controls**: Fixed an issue where unpausing via headphone buttons failed on mobile, and enabled headphone track skipping.
+- **Background Stream Recovery**: Added automatic stream reconnection and queue progression if the network momentarily drops while the app is in the background.
+
+---
+
+## [1.3.0] - 2026-03-01
+
+### Added
+- **Last.fm Scrobbling** — Connect your Last.fm account to automatically scrobble tracks. Includes Now Playing updates, configurable scrobble threshold (50% or 4 minutes), and session persistence across page reloads.
+- **Artist Bio Modal** — Click the artist name in the player bar to view biography (Wikipedia), genres, social links, country, active years, and artist image (fanart.tv / Wikipedia).
+- **Similar Artists** — Artist Bio modal now shows a horizontally scrollable list of similar artists (powered by Last.fm). Click any chip to load that artist's bio.
+- **Playlist Export** — Export any playlist or queue as M3U, CSV, or JSON via the 📤 button in detail view and queue panel.
+- **Playlist Import** — Import playlists from M3U, CSV, or JSON files via **More → Import Playlist**. Tracks are automatically resolved against Deezer.
+- **Hi-Res Quality Selector** — HiFi button now cycles through 3 modes: HiFi (16-bit FLAC), Hi-Res (24-bit), and Hi-Res+ (highest available). Quality preference persists across sessions.
+- **💖 Donate** — Added donate link (Pally.gg) to the More dropdown menu and README header.
+
+### Fixed
+- **Artist Bio Auto-Popup** — Fixed bug where clicking any track in an album/playlist would trigger the Artist Bio modal (click handler was too broad, now restricted to player bar only).
+- **Artist Bio Caching** — Fixed empty biographies being permanently cached when Wikipedia extraction failed. Cache now only stores successful results.
+- **Stale Browser Cache** — Updated app.js cache buster to force browsers to load latest code after updates.
+
+### Improved
+- **XSS Hardening** — Fixed potential XSS vulnerability in Similar Artists chips where artist names with apostrophes could break inline JavaScript handlers. Now uses `data-artist` attributes.
+- **Code Cleanup** — Full audit: removed debug traceback from `artist_service.py`, dead `get_similar_tracks()` from `lastfm_service.py`, orphaned API endpoint, and stale SpotiFLAC branding in service worker.
+- **Service Worker** — Renamed from "SpotiFLAC" to "Freedify" and bumped cache version to `freedify-v7`.
+
+---
+
+## [1.2.0] - 2026-03-01
+
+### Improved
+- **Streaming Resilience**: Increased upstream proxy read timeout from 60s to 300s to prevent random mid-song pauses caused by slow CDN delivery from Tidal/Deezer.
+- **Faster Playback Start**: Switched audio load trigger from `canplaythrough` to `canplay` — playback begins as soon as the first few seconds are buffered instead of waiting for the browser's full-track estimate.
+- **Load Timeout**: Reduced track load timeout from 120s to 20s — failed tracks are detected and handled much faster.
+- **Uvicorn Keepalive**: Increased from default 5s to 120s in Dockerfile to prevent premature TCP connection closures on long streams.
+
+### Added
+- **Auto-Skip on Failure**: If a track fails to load, the player automatically skips to the next track in the queue with a toast notification. Cascades up to 5 consecutive failures before stopping.
+- **Stall Recovery**: New `stalled` event handler with a 10-second recovery timer — attempts a seek-to-resume (forces browser reconnect). If unrecoverable after 20s, auto-skips to the next track.
+- **Waiting Watchdog**: 15-second watchdog on the `waiting` event triggers a seek-recovery if the browser's audio buffer runs dry mid-song.
+- **Proxy Unbuffering**: Added `X-Accel-Buffering: no` header to all streaming responses so reverse proxies (Render, Tailscale, nginx) flush audio chunks immediately.
+- **Docker `.env` Security**: Refactored `docker-compose.yml` to pull all API keys from a local `.env` file. Added `.env.example` template for safe public sharing.
+- **Environment Variables**: Added support for Ticketmaster, SeatGeek, Setlist.fm, Spotify, Google, and Jamendo API keys in `.env` and `docker-compose.yml`.
+
+### Fixed
+- **Podcast Episode Modal**: Fixed `SyntaxError` from unescaped apostrophes in podcast descriptions breaking inline JSON handlers. Fixed `showPodcastModal` parsing a URL-encoded string instead of a JSON object. Restored missing `podcast-modal` HTML structure.
+
+---
+
 ## [1.1.9] - 2026-02-26
 
 ### Added

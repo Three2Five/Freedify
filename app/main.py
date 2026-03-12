@@ -8,6 +8,10 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 
+# Load .env file for local development (Docker uses docker-compose env_file instead)
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, HTTPException, Query, Response, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
@@ -28,10 +32,14 @@ from app.dj_service import dj_service
 from app.ai_radio_service import ai_radio_service
 from app.ytmusic_service import ytmusic_service
 from app.setlist_service import setlist_service
+from app.lastfm_service import lastfm_service
+from app.artist_service import artist_service
 from app.listenbrainz_service import listenbrainz_service
 from app.jamendo_service import jamendo_service
 from app.genius_service import genius_service
 from app.concert_service import concert_service
+from app.audiobookbay_service import search_audiobooks, get_audiobook_details
+from app.premiumize_service import create_transfer, check_transfer_status, list_folder_contents, search_my_files
 
 from app.cache import cleanup_cache, periodic_cleanup, is_cached, get_cache_path
 
@@ -42,6 +50,33 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ============================================================
+# Stream URL Cache — avoids re-running the full API chain on seek/range requests
+# Key: isrc, Value: (stream_url, metadata, timestamp)
+# Entries expire after STREAM_CACHE_TTL seconds (CDN tokens typically live ~1 hour)
+# ============================================================
+import time
+_stream_url_cache: dict = {}
+STREAM_CACHE_TTL = 1800  # 30 minutes
+
+async def keep_awake_ping():
+    """Background task to ping the server and prevent Render spin-down."""
+    import httpx
+    # Render sets RENDER_EXTERNAL_URL automatically, so we can use it to ping ourselves
+    target_url = os.environ.get("RENDER_EXTERNAL_URL", "http://localhost:8000")
+    ping_url = f"{target_url}/api/health"
+    
+    # 13 minutes = 780 seconds
+    interval = 13 * 60
+    
+    async with httpx.AsyncClient() as client:
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                response = await client.get(ping_url)
+                logger.debug(f"Auto-ping {ping_url}: {response.status_code}")
+            except Exception as e:
+                logger.warning(f"Auto-ping failed: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -51,13 +86,23 @@ async def lifespan(app: FastAPI):
     # Initial cache cleanup
     await cleanup_cache()
     
+    # Pre-warm Tidal API list at startup (so first play isn't slow)
+    try:
+        await audio_service.update_tidal_apis()
+    except Exception as e:
+        logger.warning(f"Failed to pre-warm Tidal APIs at startup: {e}")
+    
     # Start periodic cleanup task
     cleanup_task = asyncio.create_task(periodic_cleanup(30))
+    
+    # Start auto-ping task to prevent Render spin-down
+    ping_task = asyncio.create_task(keep_awake_ping())
     
     yield
     
     # Cleanup on shutdown
     cleanup_task.cancel()
+    ping_task.cancel()
     await deezer_service.close()
     await live_show_service.close()
     await spotify_service.close()
@@ -114,6 +159,66 @@ async def get_config():
         "google_client_id": os.environ.get("GOOGLE_CLIENT_ID", ""),
     }
 
+# ========== SPOTIFY OAUTH ENDPOINTS ==========
+
+@app.get("/api/spotify/login")
+async def spotify_login(request: Request):
+    """Redirect user to Spotify OAuth login."""
+    # Build redirect URI based on the incoming request host
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host", request.url.netloc)
+    
+    # Spotify strictly blocks 'localhost' over HTTP, but allows '127.0.0.1'
+    if host.startswith("localhost"):
+        host = host.replace("localhost", "127.0.0.1")
+        
+    redirect_uri = f"{scheme}://{host}/api/spotify/callback"
+    
+    url = spotify_service.get_oauth_url(redirect_uri)
+    if not url:
+        raise HTTPException(status_code=500, detail="Spotify Client ID missing in .env")
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url)
+
+@app.get("/api/spotify/callback")
+async def spotify_callback(request: Request, code: str = None, error: str = None):
+    """Handle the Spotify OAuth callback and exchange code for tokens."""
+    if error:
+        from fastapi.responses import RedirectResponse
+        return RedirectResponse(url="/?spotify_error=" + error)
+        
+    if not code:
+        raise HTTPException(status_code=400, detail="Missing authorization code")
+        
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host", request.url.netloc)
+    
+    if host.startswith("localhost"):
+        host = host.replace("localhost", "127.0.0.1")
+        
+    redirect_uri = f"{scheme}://{host}/api/spotify/callback"
+    
+    success = await spotify_service.exchange_oauth_code(code, redirect_uri)
+    from fastapi.responses import RedirectResponse
+    # Redirect user back to wherever they were, or root
+    if success:
+        return RedirectResponse(url="/?spotify_connected=true")
+    else:
+        return RedirectResponse(url="/?spotify_error=exchange_failed")
+
+@app.get("/api/spotify/status")
+async def spotify_status():
+    """Check if the user has connected their Spotify account."""
+    is_connected = spotify_service.has_user_token()
+    return {"connected": is_connected}
+
+@app.post("/api/spotify/disconnect")
+async def spotify_disconnect():
+    """Disconnect the user's Spotify account by clearing tokens."""
+    spotify_service.clear_user_token()
+    return {"status": "disconnected"}
+
+
 @app.get("/api/search")
 async def search(
     q: str = Query(..., min_length=1, description="Search query"),
@@ -157,6 +262,11 @@ async def search(
         if type == "podcast":
             results = await podcast_service.search_podcasts(q)
             return {"results": results, "query": q, "type": "podcast", "source": "podcast", "offset": offset}
+            
+        # Audiobook Search
+        if type == "audiobook":
+            results = await search_audiobooks(q)
+            return {"results": results, "query": q, "type": "audiobook", "source": "audiobookbay", "offset": offset}
         
         # YouTube Music Search
         if type == "ytmusic":
@@ -174,16 +284,47 @@ async def search(
         if live_results is not None:
             return {"results": live_results, "query": q, "type": "album", "source": "live_shows"}
         
-        # Regular search - Use Dab Music (Priority) then Deezer
+        # Regular search - Use Tidal (Priority), then Qobuz, then Dab, then Deezer
         logger.info(f"Searching: {q} (type: {type}, offset: {offset})")
         
         results = []
         source = "deezer"
         
-        # 1. Try Dab Music (unless offset > 0, as Dab paging is limited/untested or we want fast fallback)
-        # Actually Dab search wrapper I wrote doesn't support offset yet (defaults limit 10).
-        # We'll use Dab for generic queries.
-        if type in ["album", "track"] and offset == 0:
+        # 0. Try Tidal FIRST
+        if type in ["album", "track"]:
+            try:
+                import app.tidal_service as tidal_service
+                if type == "album":
+                    tidal_results = await tidal_service.search_albums(q, limit=20, offset=offset)
+                else:
+                    tidal_results = await tidal_service.search_tracks(q, limit=20, offset=offset)
+                
+                if tidal_results:
+                    logger.info(f"Found {len(tidal_results)} results on Tidal")
+                    results = tidal_results
+                    source = "tidal"
+            except Exception as e:
+                logger.error(f"Tidal search error: {e}")
+        
+        # 1. Try Qobuz (Squid.wtf) if Tidal found no results [BYPASSED — currently broken]
+        from app.audio_service import ENABLE_QOBUZ, ENABLE_DAB
+        if ENABLE_QOBUZ and not results and type in ["album", "track"] and offset == 0:
+            try:
+                from app.qobuz_service import qobuz_service
+                if type == "album":
+                    qobuz_results = await qobuz_service.search_albums(q, limit=10)
+                else:
+                    qobuz_results = await qobuz_service.search_tracks(q, limit=10)
+                
+                if qobuz_results:
+                    logger.info(f"Found {len(qobuz_results)} results on Qobuz")
+                    results = qobuz_results
+                    source = "qobuz"
+            except Exception as e:
+                logger.error(f"Qobuz search error: {e}")
+
+        # 1b. Try Dab Music (fallback/alternative Hi-Res) [BYPASSED — currently broken]
+        if ENABLE_DAB and not results and type in ["album", "track"] and offset == 0:
             try:
                 from app.dab_service import dab_service
                 if type == "album":
@@ -343,12 +484,15 @@ async def get_album(album_id: str):
         if album: return album
         raise HTTPException(status_code=404, detail="Deezer album not found")
 
-    """Get album details with all tracks."""
     try:
         # Handle different sources based on ID prefix
         if album_id.startswith("dz_"):
             # Deezer album
             album = await deezer_service.get_album(album_id)
+        elif album_id.startswith("td_"):
+            # Tidal album
+            from app.tidal_service import get_album as get_tidal_album
+            album = await get_tidal_album(album_id)
         elif album_id.startswith("archive_"):
             # Archive.org show - import via URL
             identifier = album_id.replace("archive_", "")
@@ -440,7 +584,9 @@ async def stream_audio(
     request: Request,
     isrc: str,
     q: Optional[str] = Query(None, description="Search query hint"),
-    hires: bool = Query(True, description="Prefer Hi-Res 24-bit audio")
+    hires: bool = Query(True, description="Prefer Hi-Res 24-bit audio"),
+    hires_quality: str = Query("6", description="Hi-Res quality: 5=192kHz/24bit, 6=96kHz/24bit"),
+    source: Optional[str] = Query(None, description="Source of the track")
 ):
     """Stream audio for a track by ISRC."""
     try:
@@ -456,11 +602,13 @@ async def stream_audio(
             from urllib.parse import urlparse
             try:
                 encoded_url = isrc.replace("LINK:", "")
+                # Add strict URL-safe base64 padding
+                encoded_url += "=" * ((4 - len(encoded_url) % 4) % 4)
                 original_url = base64.urlsafe_b64decode(encoded_url).decode()
                 
                 # Check for direct file extension first (fast path)
                 parsed = urlparse(original_url)
-                audio_exts = ('.mp3', '.m4a', '.ogg', '.wav', '.aac', '.opus', '.flac')
+                audio_exts = ('.mp3', '.m4a', '.ogg', '.wav', '.aac', '.opus', '.flac', '.m4b', '.mp4')
                 if any(parsed.path.lower().endswith(ext) for ext in audio_exts):
                      target_stream_url = original_url
                 else:
@@ -498,7 +646,9 @@ async def stream_audio(
 
             try:
                 # Create a local client instance (not shared).
-                client = httpx.AsyncClient(follow_redirects=True, timeout=60.0)
+                # Use long read timeout (300s) so slow upstream CDNs don't kill active streams
+                stream_timeout = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=10.0)
+                client = httpx.AsyncClient(follow_redirects=True, timeout=stream_timeout)
                 req = client.build_request("GET", target_stream_url, headers=req_headers)
                 r = await client.send(req, stream=True)
                 
@@ -506,7 +656,8 @@ async def stream_audio(
                 resp_headers = {
                     "Accept-Ranges": "bytes",
                     "Cache-Control": "public, max-age=3600",
-                    "Access-Control-Allow-Origin": "*"
+                    "Access-Control-Allow-Origin": "*",
+                    "X-Accel-Buffering": "no"
                 }
                 for key in ["Content-Range", "Content-Length", "Content-Type", "Last-Modified", "ETag"]:
                     if r.headers.get(key):
@@ -540,7 +691,7 @@ async def stream_audio(
         cache_ext = "flac"
         mime_type = "audio/flac"
         
-        # Check cache
+        # Check file cache
         if is_cached(isrc, cache_ext):
             cache_path = get_cache_path(isrc, cache_ext)
             logger.info(f"Serving from cache ({cache_ext}): {cache_path}")
@@ -550,93 +701,124 @@ async def stream_audio(
                 headers={"Accept-Ranges": "bytes", "Cache-Control": "public, max-age=86400"}
             )
         
+        # Check stream URL cache (for seek/range requests on the same track)
+        cached = _stream_url_cache.get(isrc)
+        if cached:
+            cached_url, cached_meta, cached_time = cached
+            if time.time() - cached_time < STREAM_CACHE_TTL:
+                logger.info(f"Stream URL cache HIT for {isrc} — skipping API chain")
+                target_stream_url = cached_url
+                metadata = cached_meta
+            else:
+                # Expired
+                del _stream_url_cache[isrc]
+                cached = None
         
-        # 4. Standard / HiFi Playback (Uses fetch_flac with internal priorities: Dab -> Tidal -> Deezer)
-        
-        # Standard: Fetch FLAC directly (Hifi/Hi-Res) - Skip MP3 transcoding
-        # The user requested to remove non-hifi options for efficiency.
-        result = await audio_service.fetch_flac(isrc, q or "", hires=hires)
-        
-        if not result:
-            raise HTTPException(status_code=404, detail="Could not fetch audio")
+        if not cached:
+            # 4. Full fetch_flac pipeline (only on first play, not on seeks)
+            result = await audio_service.fetch_flac(isrc, q or "", hires=hires, hires_quality=hires_quality, source=source)
             
-        # Check if result is URL (tuple[str, dict]) or Bytes (tuple[bytes, dict])
-        if isinstance(result[0], str):
-            # It's a URL! Stream it via proxy
-            target_stream_url = result[0]
-            metadata = result[1]
-            logger.info(f"Streaming via proxy from URL: {target_stream_url[:50]}...")
+            if not result:
+                raise HTTPException(status_code=404, detail="Could not fetch audio")
             
-            # Proxy streaming logic for fetched URL
-            # Need to handle Range requests properly for seeking
-            
-            req_headers = {}
-            if request.headers.get("Range"):
-                req_headers["Range"] = request.headers.get("Range")
-                logger.info(f"Forwarding Range header: {req_headers['Range']}")
-
-            # Make initial request to get status/headers
-            client = httpx.AsyncClient(timeout=60.0, follow_redirects=True)
-            try:
-                upstream_req = client.build_request("GET", target_stream_url, headers=req_headers)
-                upstream_resp = await client.send(upstream_req, stream=True)
+            if isinstance(result[0], str):
+                # It's a URL — cache it for future seek requests
+                target_stream_url = result[0]
+                metadata = result[1]
+                _stream_url_cache[isrc] = (target_stream_url, metadata, time.time())
+                logger.info(f"Stream URL cached for {isrc} (TTL={STREAM_CACHE_TTL}s) - is_hi_res={metadata.get('is_hi_res')}")
+            else:
+                # It's bytes! Serve directly (no caching needed).
+                flac_data, metadata = result
                 
-                # Build response headers
-                resp_headers = {
+                headers = {
                     "Accept-Ranges": "bytes",
-                    "Cache-Control": "public, max-age=3600",
-                    "Access-Control-Allow-Origin": "*"
+                    "Content-Length": str(len(flac_data)),
+                    "Cache-Control": "public, max-age=86400",
+                    "Access-Control-Expose-Headers": "X-Audio-Quality, X-Audio-Format, Content-Type, Content-Length",
+                    "X-Audio-Format": "FLAC"
                 }
                 
-                # Forward important headers from upstream
-                for key in ["Content-Range", "Content-Length", "Content-Type"]:
-                    if upstream_resp.headers.get(key):
-                        resp_headers[key] = upstream_resp.headers[key]
-                
                 if metadata and metadata.get("is_hi_res"):
-                    resp_headers["X-Audio-Quality"] = "Hi-Res"
-                    resp_headers["X-Audio-Format"] = "FLAC"
-
-                # Iterator that closes client when done
-                async def response_iterator():
-                    try:
-                        async for chunk in upstream_resp.aiter_bytes(chunk_size=65536):
-                            yield chunk
-                    except Exception as e:
-                        logger.error(f"Stream iteration error: {e}")
-                    finally:
-                        await upstream_resp.aclose()
-                        await client.aclose()
-                
-                return StreamingResponse(
-                    response_iterator(),
-                    status_code=upstream_resp.status_code,  # 200 or 206
-                    media_type=upstream_resp.headers.get("Content-Type", "audio/flac"), 
-                    headers=resp_headers
+                    headers["X-Audio-Quality"] = "Hi-Res"
+                    
+                return Response(
+                    content=flac_data,
+                    media_type="audio/flac",
+                    headers=headers
                 )
-            except Exception as e:
-                await client.aclose()
-                raise
-            
-        else:
-            # It's bytes! Serve directly.
-            flac_data, metadata = result
-            
-            headers = {
+        
+        # 5. Proxy the resolved stream URL (handles both cached and freshly-resolved URLs)
+        logger.info(f"Proxying stream: {target_stream_url[:60]}...")
+        
+        req_headers = {}
+        if request.headers.get("Range"):
+            req_headers["Range"] = request.headers.get("Range")
+            logger.info(f"Forwarding Range header: {req_headers['Range']}")
+
+        if request.method == "HEAD":
+            head_headers = {
                 "Accept-Ranges": "bytes",
-                "Content-Length": str(len(flac_data)),
-                "Cache-Control": "public, max-age=86400",
+                "Cache-Control": "public, max-age=3600",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Expose-Headers": "X-Audio-Quality, X-Audio-Format, Content-Type, Content-Length",
+                "Content-Type": "audio/flac",
                 "X-Audio-Format": "FLAC"
             }
-            
             if metadata and metadata.get("is_hi_res"):
-                headers["X-Audio-Quality"] = "Hi-Res"
+                head_headers["X-Audio-Quality"] = "Hi-Res"
+            else:
+                # Explicitly remove it or set it to standard so browser sees it change
+                head_headers["X-Audio-Quality"] = "Standard"
                 
-            return Response(
-                content=flac_data,
-                media_type="audio/flac",
-                headers=headers
+            return Response(status_code=200, headers=head_headers)
+
+        stream_timeout = httpx.Timeout(connect=10.0, read=300.0, write=10.0, pool=10.0)
+        client = httpx.AsyncClient(timeout=stream_timeout, follow_redirects=True)
+        try:
+            upstream_req = client.build_request("GET", target_stream_url, headers=req_headers)
+            upstream_resp = await client.send(upstream_req, stream=True)
+            
+            # Build response headers
+            resp_headers = {
+                "Accept-Ranges": "bytes",
+                "Cache-Control": "public, max-age=3600",
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Expose-Headers": "X-Audio-Quality, X-Audio-Format, Content-Type, Content-Length",
+                "X-Accel-Buffering": "no"
+            }
+            
+            # Forward important headers from upstream
+            for key in ["Content-Range", "Content-Length", "Content-Type"]:
+                if upstream_resp.headers.get(key):
+                    resp_headers[key] = upstream_resp.headers[key]
+            
+            resp_headers["X-Audio-Format"] = "FLAC"
+            if metadata and metadata.get("is_hi_res"):
+                resp_headers["X-Audio-Quality"] = "Hi-Res"
+            else:
+                resp_headers["X-Audio-Quality"] = "Standard"
+
+            # Iterator that closes client when done
+            async def response_iterator():
+                try:
+                    async for chunk in upstream_resp.aiter_bytes(chunk_size=65536):
+                        yield chunk
+                except Exception as e:
+                    logger.error(f"Stream iteration error: {e}")
+                finally:
+                    await upstream_resp.aclose()
+                    await client.aclose()
+            
+            return StreamingResponse(
+                response_iterator(),
+                status_code=upstream_resp.status_code,  # 200 or 206
+                media_type=upstream_resp.headers.get("Content-Type", "audio/flac"), 
+                headers=resp_headers
             )
+        except Exception as e:
+            await client.aclose()
+            raise
         
     except HTTPException:
         raise
@@ -650,13 +832,15 @@ async def download_audio(
     isrc: str,
     q: Optional[str] = Query(None, description="Search query hint"),
     format: str = Query("mp3", description="Audio format: mp3, flac, aiff, wav, alac"),
-    filename: Optional[str] = Query(None, description="Filename")
+    filename: Optional[str] = Query(None, description="Filename"),
+    hires: bool = Query(False, description="Enable Hi-Res mode"),
+    hires_quality: str = Query("6", description="Hi-Res quality: 6=96kHz/24bit, 5=192kHz/24bit")
 ):
     """Download audio in specified format."""
     try:
-        logger.info(f"Download request for {isrc} in {format}")
+        logger.info(f"Download request for {isrc} in {format} (hires={hires}, quality={hires_quality})")
         
-        result = await audio_service.get_download_audio(isrc, q or "", format)
+        result = await audio_service.get_download_audio(isrc, q or "", format, hires=hires, hires_quality=hires_quality)
         
         if not result:
             raise HTTPException(status_code=404, detail="Could not fetch audio for download")
@@ -1097,6 +1281,112 @@ async def service_worker():
     raise HTTPException(status_code=404)
 
 
+# ==================== LAST.FM ENDPOINTS ====================
+
+class LastFMScrobbleRequest(BaseModel):
+    session_key: str
+    artist: str
+    track: str
+    album: str = ""
+    timestamp: Optional[int] = None
+
+class LastFMNowPlayingRequest(BaseModel):
+    session_key: str
+    artist: str
+    track: str
+    album: str = ""
+
+@app.get("/api/lastfm/auth-url")
+async def lastfm_auth_url(callback: str = Query(..., description="Callback URL after authorization")):
+    """Get Last.fm authorization URL for the user to click."""
+    url = lastfm_service.get_auth_url(callback)
+    return {"url": url}
+
+@app.post("/api/lastfm/callback")
+async def lastfm_callback(data: dict):
+    """Exchange authorization token for session key."""
+    token = data.get("token")
+    if not token:
+        raise HTTPException(status_code=400, detail="Token required")
+    result = await lastfm_service.get_session(token)
+    if not result:
+        raise HTTPException(status_code=401, detail="Last.fm authorization failed")
+    return result
+
+@app.post("/api/lastfm/scrobble")
+async def lastfm_scrobble(request: LastFMScrobbleRequest):
+    """Scrobble a track to Last.fm."""
+    success = await lastfm_service.scrobble(
+        request.session_key, request.artist, request.track,
+        request.album, request.timestamp
+    )
+    return {"success": success}
+
+@app.post("/api/lastfm/nowplaying")
+async def lastfm_nowplaying(request: LastFMNowPlayingRequest):
+    """Update Now Playing on Last.fm."""
+    success = await lastfm_service.update_now_playing(
+        request.session_key, request.artist, request.track, request.album
+    )
+    return {"success": success}
+
+@app.get("/lastfm-callback")
+async def lastfm_callback_page():
+    """Serve the Last.fm callback page that captures the token."""
+    html = """
+    <!DOCTYPE html>
+    <html><head><title>Last.fm Authorization</title>
+    <style>body{background:#121212;color:#fff;font-family:Inter,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}</style>
+    </head><body>
+    <div style="text-align:center">
+        <h2>✅ Last.fm Connected!</h2>
+        <p>This window will close automatically...</p>
+    </div>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('token');
+        if (token) {
+            // Store token for the main window to pick up
+            localStorage.setItem('lastfm_pending_token', token);
+            
+            // Try postMessage to opener
+            if (window.opener) {
+                window.opener.postMessage({type: 'lastfm-auth', token: token}, '*');
+            }
+            
+            // Try BroadcastChannel (works even without window.opener)
+            try {
+                const bc = new BroadcastChannel('freedify_lastfm');
+                bc.postMessage({type: 'lastfm-auth', token: token});
+                bc.close();
+            } catch(e) {}
+            
+            // Always close — never redirect to /
+            setTimeout(() => window.close(), 1500);
+        }
+    </script>
+    </body></html>
+    """
+    return Response(content=html, media_type="text/html")
+
+@app.get("/api/lastfm/artist/{artist}/similar")
+async def lastfm_similar_artists(artist: str):
+    """Get similar artists from Last.fm."""
+    artists = await lastfm_service.get_similar_artists(artist)
+    return {"artists": artists or []}
+
+
+# ==================== ARTIST BIO ENDPOINT ====================
+
+@app.get("/api/artist/{name}/bio")
+async def get_artist_bio(name: str):
+    """Get artist biography, social links, and image."""
+    result = await artist_service.get_artist_bio(name)
+    if not result:
+        raise HTTPException(status_code=404, detail="Artist not found")
+    return result
+
+
 # ==================== LISTENBRAINZ ENDPOINTS ====================
 
 @app.post("/api/listenbrainz/now-playing")
@@ -1237,6 +1527,80 @@ async def get_concerts_for_artists(
         return {"events": events, "artists": artist_list, "cities": city_list}
     except Exception as e:
         logger.error(f"Concerts for artists error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ========== GOODREADS ENDPOINTS ==========
+
+@app.get("/api/goodreads/book")
+async def get_goodreads_book_info(
+    title: str = Query(..., description="Book title"),
+    author: str = Query("", description="Book author (optional)")
+):
+    """Search Goodreads for a book and return rating, reviews, and description."""
+    try:
+        from app.goodreads_service import search_book
+        result = await search_book(title, author)
+        if not result:
+            return {"found": False, "message": "No Goodreads match found"}
+        return {"found": True, **result}
+    except Exception as e:
+        logger.error(f"Goodreads lookup error: {e}")
+        return {"found": False, "message": str(e)}
+
+# ========== AUDIOBOOKS & PREMIUMIZE ENDPOINTS ==========
+
+@app.get("/api/audiobooks/details")
+async def get_audiobook_details_endpoint(id: str = Query(..., description="Audiobook slug")):
+    """Get details and magnet link for an audiobook from AudiobookBay."""
+    try:
+        details = await get_audiobook_details(id)
+        return details
+    except Exception as e:
+        logger.error(f"Audiobook details error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/premiumize/transfer")
+async def start_premiumize_transfer(request: Request):
+    """Start a Premiumize transfer using a magnet link."""
+    try:
+        data = await request.json()
+        magnet_link = data.get("magnet_link")
+        if not magnet_link:
+            raise HTTPException(status_code=400, detail="magnet_link is required")
+        result = await create_transfer(magnet_link)
+        return result
+    except Exception as e:
+        logger.error(f"Premiumize transfer error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/premiumize/transfer/{transfer_id}")
+async def get_premiumize_transfer_status(transfer_id: str):
+    """Check status of a specific Premiumize transfer."""
+    try:
+        status = await check_transfer_status(transfer_id)
+        return {"transfer": status}
+    except Exception as e:
+        logger.error(f"Premiumize status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/premiumize/folder/{folder_id}")
+async def get_premiumize_folder_contents(folder_id: str):
+    """List audio files in a Premiumize folder."""
+    try:
+        contents = await list_folder_contents(folder_id)
+        return contents
+    except Exception as e:
+        logger.error(f"Premiumize folder error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/premiumize/search")
+async def search_premiumize_files(q: str = Query(..., description="Query to search your files")):
+    """Search for files already downloaded to Premiumize."""
+    try:
+        results = await search_my_files(q)
+        return {"results": results}
+    except Exception as e:
+        logger.error(f"Premiumize search error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

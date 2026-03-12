@@ -1,8 +1,12 @@
 # Freedify - Music Streaming Web App
 
-*Last updated: February 24, 2026*
+```markdown
+*Last updated: March 9, 2026*
+```
 
 Stream music and podcasts from anywhere. **Generate smart playlists with AI**, search songs, albums, artists, podcasts or paste URLs from Spotify, SoundCloud, Bandcamp, Archive.org, Phish.in, and more.
+
+> 💖 **Support Freedify!** If you enjoy using Freedify and want to support its ongoing development and new features, please consider making a donation: **[Donate on Pally.gg](https://pally.gg/p/freedify)**. Any amount is incredibly appreciated and helps keep the music playing!
 
 > [!IMPORTANT]
 > **New to Freedify?** check out our **[Visual Deployment Guide](https://biohaphazard.github.io/Freedify/guide.html)** for easy step-by-step setup instructions (Localhost, Railway, & Render).
@@ -23,7 +27,7 @@ Open [http://localhost:8000](http://localhost:8000) and start streaming! 🎵
 
 ### 🎧 HiFi & Hi-Res Streaming
 - **Lossless FLAC** - Direct 16-bit FLAC streaming from Tidal (HiFi)
-- **Hi-Res Audio** - **24-bit/96kHz** support powered by **Dab Music** (Qobuz Proxy)
+- **Hi-Res Audio** - True **24-bit/192kHz** support powered by multiple Tidal proxy APIs
 - **Hi-Res Mode Toggle** - Click the HiFi button to switch between:
   - **Hi-Res Mode** (Cyan) - Prioritizes 24-bit lossless when available
   - **HiFi Mode** (Green) - Standard 16-bit lossless streaming
@@ -37,14 +41,8 @@ Open [http://localhost:8000](http://localhost:8000) and start streaming! 🎵
 - **Gapless Playback** - Seamless music transitions (default) with optional 1-second crossfade
 - **Music Discovery** - Click Artist name to search or Album name to view full tracklist instantly
 
-### 🧠 AI & Smart Features - Needs Gemini API Key to work
-- **Smart Playlist Generator** - Create custom playlists instantly by describing a vibe, genre, or activity.
-- **AI Radio** - Infinite queue recommendations based on your seed track (prevents genre drift)
-- **DJ Mode** - AI-powered mixing tips (transition technique, timing, key compatibility) - accuracy undetermined
-- **Mix Analysis** - Learn how to mix compatible tracks by Key and BPM
-
 ### 🔍 Search
-- **Deezer-powered** - Search tracks, albums, or artists with no rate limits
+- **Tidal-powered** - Lightning fast search for tracks, albums, and artists with no rate limits
 - **YouTube Music** - Search YT Music catalog via **More → YT Music**
 - **Jamendo Fallback** - 600K+ independent/Creative Commons tracks (auto-fallback if main sources miss)
 - **Live Show Search** - Search "Phish 2025" or "Grateful Dead 1977" to find live shows
@@ -54,6 +52,56 @@ Open [http://localhost:8000](http://localhost:8000) and start streaming! 🎵
 - **Episode Details** - Click any episode to see full title, description, and publish date
 - **Concert Search** - Find upcoming shows via **More → Concert Search** (Ticketmaster + SeatGeek)
 - **URL Import** - Paste links from Spotify, Bandcamp, Soundcloud, Archive.org, Phish.in
+
+### 🎙️ Podcasts
+- **My Podcasts** - Dedicated page to save and organize your favorite shows
+- **Episode Resume** - Automatically saves playback position for episodes and resumes where you left off
+- **Mark as Played** - Keep track of finished episodes with ✅ toggles
+- **History & Tags** - View recently played episodes and organize favorites with custom tags
+- **Queue & Download** - Episodes seamlessly integrate with the player queue and can be downloaded
+
+### 📚 Audiobooks
+- **Important Note:** Streaming audiobooks currently **requires a Premiumize.me account** for caching the torrents. If you use Real-Debrid, All-Debrid, or another service, we invite you to fork Freedify and submit a PR to add support for your preferred debrid service (as we currently lack accounts to test them with)!
+- **My Books** - Audiobook bookshelf to save, organize, and resume your audiobooks
+- **AudiobookBay Search** - Search and download audiobooks via AudiobookBay + Premiumize integration
+- **Book Info Modal** - Click any book for cover art, description, chapters, and play/resume controls
+- **Goodreads Reviews** - Integrated ratings, genres, and top community reviews from Goodreads
+- **Resume Playback** - Cached audiobook tracks resume where you left off — even from the bookshelf
+- **Google Drive Sync** - Audiobook favorites, cached tracks, and progress sync across devices
+
+### 📋 Playlists
+- **Add to Playlist** - Click the heart icon on any track to add it to a playlist
+- **Create Playlists** - Create new playlists on the fly from the Add to Playlist modal
+- **Playlists Tab** - Click **More → Playlists** to view all saved playlists
+- **Delete Songs** - Remove individual songs from any playlist
+- **Import Playlists** - Import M3U, CSV, or JSON playlist files via **More → Import Playlist**
+- **Export Playlists** - Export any playlist or queue as M3U, CSV, or JSON via the 📤 button
+- **Google Drive Sync** - Playlists, Library, and History sync to Google Drive
+- **Local Backup** - Also stored in browser localStorage (survives restarts)
+- **Delete Playlists** - Hover over playlist and click 🗑️ to remove
+
+### ⭐ My Library
+- **Star to Save** - Click ★ on any track to save to your Library (separate from playlists)
+- **Quick Access** - Library section on dashboard shows your starred tracks
+- **Full Library View** - Click "See All" to browse your entire collection
+- **Synced** - Library syncs to Google Drive alongside playlists
+
+### ☁️ Google Drive Sync
+- **Sync Modal** - Click ☁️ or press `Shift+S` to open the Drive Sync panel
+- **Granular Control** - Choose to sync:
+  - **Everything** (Playlists + Queue)
+  - **Playlists Only** (keeps cloud queue unchanged)
+  - **Queue Only** (keeps cloud playlists unchanged)
+- **Cross-Device Resume** - Start listening on one device, continue on another
+- **Smart Merge** - Partial uploads preserve existing cloud data
+- **Save Tracks** - Save audio directly to your "Freedify" folder
+- **Privacy** - Uses Drive appDataFolder (hidden from Drive UI)
+
+### 🧠 AI & Smart Features - Needs Gemini API Key to work
+- **Smart Playlist Generator** - Create custom playlists instantly by describing a vibe, genre, or activity.
+- **AI Radio** - Infinite queue recommendations based on your seed track (prevents genre drift)
+- **DJ Mode** - AI-powered mixing tips (transition technique, timing, key compatibility) - accuracy undetermined
+- **Mix Analysis** - Learn how to mix compatible tracks by Key and BPM
 
 ### 🎵 Live Show Archives
 - **Phish.in** - Search by year/month (e.g., Phish 2025 or Phish 2024/12)
@@ -65,6 +113,21 @@ Open [http://localhost:8000](http://localhost:8000) and start streaming! 🎵
 - **Recommendations** - "For You" section (via **More → For You**) offers personalized tracks based on your history
 - **Stats Dashboard** - See your total scrobbles and top artists this week in the For You section
 - **Easy Setup** - Configure via `LISTENBRAINZ_TOKEN` environment variable
+
+### 🎸 Last.fm Scrobbling
+- **One-Click Connect** - Authenticate via the Last.fm popup (More → Connect Last.fm)
+- **Auto-Scrobble** - Tracks are scrobbled after 50% duration or 4 minutes
+- **Now Playing** - Real-time "Now Playing" status updates on your Last.fm profile
+- **Session Persistence** - Stay connected across page reloads
+- **Similar Artists** - Discover related artists via the Artist Bio modal (powered by Last.fm)
+
+### 🎤 Artist Bio
+- **Click to Explore** - Click the artist name in the player bar to open the bio modal
+- **Wikipedia Bio** - Artist biography pulled from Wikipedia via MusicBrainz
+- **Social Links** - Instagram, X/Twitter, Bandcamp, SoundCloud, YouTube, Spotify, and more
+- **Genres & Tags** - Top genres from MusicBrainz community tags
+- **Similar Artists** - Scrollable list of related artists (click to explore)
+- **Artist Image** - High-quality photos from fanart.tv with Wikipedia fallback
 
 ### 📝 Genius Lyrics
 - **Lyrics Modal** - Press **L** or click 📝 in player controls to view lyrics
@@ -121,42 +184,6 @@ Open [http://localhost:8000](http://localhost:8000) and start streaming! 🎵
 - **Quick Resume** - Click any item to instantly start playing
 - **Smart History** - Tracks last 50 played songs automatically
 - **Cross-Device** - History and library sync via Google Drive
-
-### ⭐ My Library
-- **Star to Save** - Click ★ on any track to save to your Library (separate from playlists)
-- **Quick Access** - Library section on dashboard shows your starred tracks
-- **Full Library View** - Click "See All" to browse your entire collection
-- **Synced** - Library syncs to Google Drive alongside playlists
-
-### 📋 Playlists
-- **Add to Playlist** - Click the heart icon on any track to add it to a playlist
-- **Create Playlists** - Create new playlists on the fly from the Add to Playlist modal
-- **Playlists Tab** - Click **More → Playlists** to view all saved playlists
-- **Delete Songs** - Remove individual songs from any playlist
-- **Google Drive Sync** - Playlists, Library, and History sync to Google Drive
-- **Local Backup** - Also stored in browser localStorage (survives restarts)
-- **Delete Playlists** - Hover over playlist and click 🗑️ to remove
-
-### 🎛️ Equalizer
-- **5-Band EQ** - Adjust 60Hz, 230Hz, 910Hz, 3.6kHz, 7.5kHz
-- **Bass Boost** - Extra low-end punch
-- **Volume Boost** - Up to +6dB gain
-- **Presets** - Flat, Bass Boost, Treble, Vocal
-
-### 🎨 Custom Themes
-- **6 Color Themes** - Default, Purple, Blue, Green, Pink, Orange
-- **Persistent** - Theme saved to localStorage
-
-### ☁️ Google Drive Sync
-- **Sync Modal** - Click ☁️ or press `Shift+S` to open the Drive Sync panel
-- **Granular Control** - Choose to sync:
-  - **Everything** (Playlists + Queue)
-  - **Playlists Only** (keeps cloud queue unchanged)
-  - **Queue Only** (keeps cloud playlists unchanged)
-- **Cross-Device Resume** - Start listening on one device, continue on another
-- **Smart Merge** - Partial uploads preserve existing cloud data
-- **Save Tracks** - Save audio directly to your "Freedify" folder
-- **Privacy** - Uses Drive appDataFolder (hidden from Drive UI)
 
 ### 🍎 Apple Music Users
 Freedify supports Spotify playlist URLs. To import your Apple Music playlists, use a free transfer tool:
@@ -230,8 +257,8 @@ To enable **Google Drive Sync** and **AI features (Smart Playlist, AI Radio, DJ 
 ### 📱 Mobile Ready
 - **PWA Support** - Install on your phone's home screen
 - **Responsive Design** - Works on any screen size
-- **320kbps MP3** - High quality streaming
-- **Lock Screen Controls** - Play/pause/skip from lock screen
+- **Lossless on the Go** - Streams pure FLAC by default (podcasts/live archives fall back to MP3)
+- **Lock Screen Controls** - Play/pause/skip from lock screen (*Note: Chrome on Android provides the best compatibility for lock screen and headphone controls*)
 
 ---
 
@@ -263,13 +290,17 @@ To enable **Google Drive Sync** and **AI features (Smart Playlist, AI Radio, DJ 
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Deployment Guide
+Below are the 5 main ways to deploy Freedify, ordered by preference.
+
+### 1. 💻 Localhost (Your Computer)
+Best for: Fastest performance, testing, and zero cost.
 
 ```bash
 # Install dependencies
 pip install -r app/requirements.txt
 
-# Install FFmpeg (required)
+# Install FFmpeg (required for transcoding podcasts/lossy audio)
 # Windows: winget install ffmpeg
 # macOS: brew install ffmpeg
 # Linux: apt install ffmpeg
@@ -277,32 +308,12 @@ pip install -r app/requirements.txt
 # Run the server
 python -m uvicorn app.main:app --port 8000
 ```
-
 Open http://localhost:8000
 
 ---
 
-## 📱 Running on Termux (Android)
-
-Freedify can run directly on Android using [Termux](https://termux.dev/):
-
-```bash
-# Install dependencies
-pkg install python ffmpeg
-pip install -r app/requirements.txt
-
-# Run the server
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-```
-
-> **Note:** The cache directory defaults to `~/.freedify_cache`. If you need a custom location, set `CACHE_DIR`:
-> ```bash
-> CACHE_DIR=~/my_cache python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
-> ```
-
----
-
-## 🐳 Self-Hosting with Docker (Recommended for NAS/Local Servers)
+### 2. 🐳 Docker (Recommended for NAS/Local Servers)
+Best for: Always-on home servers, Raspberry Pi, unRAID, or running Freedify cleanly in an isolated container.
 
 1. **Install Docker** on your machine.
 2. **Clone the repo:**
@@ -310,7 +321,7 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
    git clone https://github.com/BioHapHazard/Freedify
    cd Freedify
    ```
-3. **Configure:** Open `docker-compose.yml` and add your optional keys (Dab Music, ListenBrainz, etc.) in the `environment` section.
+3. **Configure:** Open `docker-compose.yml` and add your optional keys (ListenBrainz, Ticketmaster, etc.) in the `environment` section.
 4. **Start the server:**
    ```bash
    docker compose up -d
@@ -319,9 +330,19 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 
 ---
 
-## 🌐 Deploy to Railway (Recommended for Mobile + Hi-Res)
+### 3. ☁️ Render (Recommended Free Cloud Host)
+Best for: Running a 24/7 public instance of Freedify for yourself with zero costs. Render fully supports our new Tidal Hi-Res API proxy mesh.
 
-**Railway is recommended** for mobile users who want Hi-Res (24-bit) streaming. Docker self-hosting is great for local networks, but Railway gives you a public URL for accessing your music from anywhere.
+1. Fork/push this repo to your own GitHub account.
+2. Go to [render.com](https://render.com) → New Web Service.
+3. Connect your GitHub repo.
+4. Render auto-detects `render.yaml`.
+5. Click **Deploy**.
+
+---
+
+### 4. 🚂 Railway (Premium Cloud Host)
+Best for: Running a 24/7 public instance of Freedify if you're willing to pay a few dollars a month for slightly faster spin-up times than Render's free tier.
 
 1. Go to [railway.app](https://railway.app) → New Project
 2. Deploy from GitHub repo
@@ -329,21 +350,32 @@ python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 4. Go to Settings → Networking → Generate Domain
 5. Your app will be live at `your-app.up.railway.app`
 
-> **Pricing:** Railway offers a 30-day trial with $5 credit. After that, the Hobby plan is **$5/month**. If you want free hosting (with 16-bit FLAC only), use Render instead.
+> **Pricing:** Railway offers a 30-day trial with $5 credit. After that, the Hobby plan is **$5/month**. 
 
 ---
 
-## 🌐 Deploy to Render (16-bit only)
+### 5. 📱 Termux (Android Native Environment)
+Freedify can run directly on an Android device without rooting, using [Termux](https://termux.dev/):
 
-Render works but **Hi-Res (24-bit) streaming is not available** due to IP restrictions on Dab Music API. You'll still get 16-bit FLAC from Tidal.
-
-1. Fork/push this repo to GitHub
-2. Go to render.com → New Web Service
-3. Connect your GitHub repo
-4. Render auto-detects render.yaml
-5. Click Deploy
-
----
+1. Install [Termux](https://termux.dev/) from F-Droid
+2. Install system dependencies:
+```bash
+pkg update && pkg upgrade
+pkg install python ffmpeg git rust binutils-is-llvm libuv python-cryptography python-grpcio
+```
+3. Install Python dependencies:
+```bash
+pip install pydantic_core
+```
+4. Clone and run:
+```bash
+git clone https://github.com/BioHapHazard/Freedify
+cd Freedify
+pip install -r app/requirements.txt
+nano .env # (Optional) add your API keys here
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+*(Tip: On Termux, the cache defaults to `~/.freedify_cache` to avoid permission errors. To update in the future, just run `git pull --rebase --autostash` inside the folder)*
 
 ## ⚙️ Environment Variables (Deployment Secrets)
 
@@ -352,8 +384,6 @@ When deploying to Render (or other hosts), set these in your Dashboard:
 | Variable | Required? | Description |
 |----------|-----------|-------------|
 | `GEMINI_API_KEY` | **YES** | Required for AI Radio and DJ Tips |
-| `DAB_SESSION` | **YES** (for Hi-Res) | Dab Music session token for 24-bit streaming |
-| `DAB_VISITOR_ID` | **YES** (for Hi-Res) | Dab Music visitor ID |
 | `MP3_BITRATE` | No | Default: 320k |
 | `PORT` | No | Default: 8000 |
 
@@ -361,6 +391,7 @@ When deploying to Render (or other hosts), set these in your Dashboard:
 
 | Variable | Description |
 |----------|-------------|
+| `PREMIUMIZE_API_KEY` | **Required for Audiobooks** - Get at premiumize.me/account |
 | `PODCASTINDEX_KEY` | For Podcast Search (better results) |
 | `PODCASTINDEX_SECRET` | For Podcast Search (required if KEY is used) |
 | `SETLIST_FM_API_KEY` | For Setlist.fm concert search (free at setlist.fm/settings/api) |
@@ -370,19 +401,6 @@ When deploying to Render (or other hosts), set these in your Dashboard:
 | `GENIUS_ACCESS_TOKEN` | For Genius lyrics (get at genius.com/api-clients) |
 | `TICKETMASTER_API_KEY` | For Concert Search (free at developer.ticketmaster.com) |
 | `SEATGEEK_CLIENT_ID` | For Concert Search fallback (free at seatgeek.com/account/develop) |
-| `DAB_SESSION` | **Recommended** - For Hi-Res (24-bit) Audio (from Dab/Qobuz) |
-| `DAB_VISITOR_ID` | **Recommended** - For Hi-Res (24-bit) Audio (from Dab/Qobuz) |
-
-### How to Get Dab Music Cookies (for Hi-Res Audio)
-
-1. Go to [dabmusic.xyz](https://dabmusic.xyz) and log in
-2. Open browser DevTools (F12 or Right-click → Inspect)
-3. Go to **Application** tab → **Cookies** → `https://dabmusic.xyz`
-4. Find and copy these values:
-   - `session` → Set as `DAB_SESSION`
-   - `visitor_id` → Set as `DAB_VISITOR_ID`
-
-> ⚠️ These cookies expire periodically. If Hi-Res stops working, repeat these steps to get fresh values.
 
 ---
 
@@ -479,9 +497,20 @@ Click a result to see the full setlist with song annotations, then click "Listen
 
 ---
 
+## Star History
+
+<a href="https://www.star-history.com/#BioHapHazard/Freedify&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=BioHapHazard/Freedify&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=BioHapHazard/Freedify&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=BioHapHazard/Freedify&type=date&legend=top-left" />
+ </picture>
+</a>
+
+---
+
 ## Credits
 Inspired by and built off of [Spotiflac](https://github.com/afkarxyz/Spotiflac) by afkarxyz.
-**Hi-Res Audio Source** provided by [Dab Music](https://dabmusic.xyz).
 
 ---
 
